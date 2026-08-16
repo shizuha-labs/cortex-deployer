@@ -173,9 +173,20 @@ async function openPicker() {
   document.getElementById("pick-dlg").showModal();
 }
 
+let lastRecipe = "";
+
+function showHfBox(err) {
+  const box = document.getElementById("hf-box");
+  const msg = String(err || "");
+  const hit = /403|429|rate limit|Hugging Face HTTP/i.test(msg);
+  box.hidden = !hit;
+  return hit;
+}
+
 async function runSetup(recipe) {
   const status = document.getElementById("setup-status");
   const btn = document.getElementById("btn-setup");
+  lastRecipe = recipe || "";
   status.textContent = "starting " + (recipe || "recommended") + "…";
   btn.disabled = true;
   try {
@@ -193,6 +204,7 @@ async function runSetup(recipe) {
       }
       if (cur.state === "error") {
         status.textContent = cur.error || "setup failed";
+        showHfBox(cur.error);
         btn.disabled = false;
         return;
       }
@@ -207,7 +219,21 @@ async function runSetup(recipe) {
 }
 document.getElementById("btn-setup").onclick = () => openPicker().catch((e) => {
   document.getElementById("setup-status").textContent = e.message;
+  showHfBox(e.message);
 });
+document.getElementById("hf-save").onclick = async () => {
+  const token = document.getElementById("hf-token").value.trim();
+  const status = document.getElementById("setup-status");
+  if (!token) { status.textContent = "paste an HF token first"; return; }
+  try {
+    await api("/api/settings", { method: "POST", body: JSON.stringify({ hf_token: token }) });
+    document.getElementById("hf-box").hidden = true;
+    status.textContent = "token saved — retrying…";
+    runSetup(lastRecipe);
+  } catch (e) {
+    status.textContent = e.message;
+  }
+};
 document.getElementById("pick-cancel").onclick = () => document.getElementById("pick-dlg").close();
 document.getElementById("pick-rows").addEventListener("click", (ev) => {
   const btn = ev.target.closest("button[data-recipe]");
@@ -233,7 +259,11 @@ document.getElementById("btn-dl").onclick = async () => {
   try {
     const job = await api("/api/downloads", {
       method: "POST",
-      body: JSON.stringify({ repo: rec.download_repo, glob: rec.download_glob || "" }),
+      body: JSON.stringify({
+        repo: rec.download_repo,
+        filename: rec.download_filename || "",
+        glob: rec.download_glob || "",
+      }),
     });
     const tick = async () => {
       const all = await api("/api/downloads");

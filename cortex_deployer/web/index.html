@@ -29,6 +29,13 @@
     <p id="fitline" class="muted" style="margin:0 0 12px"></p>
     <p id="binwarn" class="err" style="margin:0 0 12px"></p>
     <p id="setup-status" class="muted" style="margin:0 0 12px"></p>
+    <div id="hf-box" class="panel" hidden style="margin:0 0 12px">
+      <p class="muted" style="margin:0 0 8px">Hugging Face rate-limited anonymous downloads. Paste a free <b>read</b> token from <a href="https://huggingface.co/settings/tokens" target="_blank" rel="noreferrer">huggingface.co/settings/tokens</a>, then retry.</p>
+      <div style="display:flex;gap:8px;flex-wrap:wrap">
+        <input id="hf-token" type="password" placeholder="hf_…" autocomplete="off" style="flex:1;min-width:16rem" />
+        <button id="hf-save" class="primary" type="button">Save token and retry</button>
+      </div>
+    </div>
 
     <section class="panel">
       <div class="panel-head">

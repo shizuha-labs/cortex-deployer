@@ -60,7 +60,7 @@ Chat in the same page, or point any OpenAI client at `http://127.0.0.1:7480/v1`.
 
 Optional **Cortex** on a row announces it to a Cortex gateway (token from the Cortex UI). `connect` never invents a token.
 
-State lives in `%USERPROFILE%\.cortex-deployer\` (override with `CORTEX_DEPLOYER_HOME`).
+State lives in `%USERPROFILE%\.cortex-deployer\` (override with `CORTEX_DEPLOYER_HOME`). If Hugging Face returns 403/429, set `HF_TOKEN` (or paste a token in the UI) — anonymous downloads are often rate-limited.
 
 ## CLI
 

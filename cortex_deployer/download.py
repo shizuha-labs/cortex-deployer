@@ -32,12 +32,80 @@ def models_dir() -> Path:
     return path
 
 
+def _stored_token() -> str:
+    path = home_dir() / "settings.json"
+    try:
+        data = json.loads(path.read_text(encoding="utf-8"))
+    except (OSError, json.JSONDecodeError):
+        return ""
+    if not isinstance(data, dict):
+        return ""
+    return str(data.get("hf_token") or "").strip()
+
+
+def hf_token() -> str:
+    for key in ("HF_TOKEN", "HUGGING_FACE_HUB_TOKEN", "CORTEX_DEPLOYER_HF_TOKEN"):
+        val = (os.environ.get(key) or "").strip()
+        if val:
+            return val
+    return _stored_token()
+
+
+def save_hf_token(token: str) -> None:
+    path = home_dir() / "settings.json"
+    path.parent.mkdir(parents=True, exist_ok=True)
+    data: dict[str, Any] = {}
+    if path.is_file():
+        try:
+            loaded = json.loads(path.read_text(encoding="utf-8"))
+            if isinstance(loaded, dict):
+                data = loaded
+        except (OSError, json.JSONDecodeError):
+            data = {}
+    token = token.strip()
+    if token:
+        data["hf_token"] = token
+    else:
+        data.pop("hf_token", None)
+    path.write_text(json.dumps(data, indent=2) + "\n", encoding="utf-8")
+
+
 def _hf_headers() -> dict[str, str]:
-    headers = {"user-agent": "cortex-deployer"}
-    token = os.environ.get("HF_TOKEN") or os.environ.get("CORTEX_DEPLOYER_HF_TOKEN")
+    headers = {"user-agent": "cortex-deployer/0.3.5"}
+    token = hf_token()
     if token:
         headers["authorization"] = f"Bearer {token}"
     return headers
+
+
+def _friendly_hf_error(exc: BaseException) -> str:
+    code = getattr(exc, "code", None)
+    reason = str(getattr(exc, "reason", "") or exc)
+    if code in {403, 429} or "rate limit" in reason.lower():
+        return (
+            f"Hugging Face HTTP {code or '?'} ({reason}). "
+            "Anonymous downloads from this network are throttled. "
+            "Create a free read token at https://huggingface.co/settings/tokens "
+            "and set HF_TOKEN, or paste it in the UI, then retry."
+        )
+    return str(exc)
+
+
+def guess_filenames(repo: str, glob: str) -> list[str]:
+    """Turn a recipe glob into concrete HF paths without listing the repo."""
+    if not glob:
+        return []
+    leaf = repo.rsplit("/", 1)[-1]
+    stem = leaf[:-5] if leaf.upper().endswith("-GGUF") else leaf
+    if glob.startswith("*") and "*" not in glob[1:] and "?" not in glob:
+        tail = glob[1:]
+        names = [f"{stem}-{tail}", f"{stem}{tail}", tail]
+        out: list[str] = []
+        for name in names:
+            if name and name not in out:
+                out.append(name)
+        return out
+    return []
 
 
 def list_local_models() -> list[dict[str, Any]]:
@@ -94,23 +162,52 @@ def list_hf_files(repo: str, glob: str = "") -> list[str]:
     return select_weight_files(names, glob)
 
 
+def resolve_names(repo: str, filename: str = "", glob: str = "") -> list[str]:
+    """Prefer an exact filename / glob guess so we never hit /api/models (403)."""
+    if filename:
+        return [filename]
+    guessed = guess_filenames(repo, glob)
+    if guessed:
+        return guessed
+    try:
+        return list_hf_files(repo, glob)
+    except HTTPError as exc:
+        raise ValueError(_friendly_hf_error(exc)) from exc
+
+
 def _download_one(url: str, dest: Path, job: dict[str, Any]) -> None:
     dest.parent.mkdir(parents=True, exist_ok=True)
     tmp = dest.with_suffix(dest.suffix + ".part")
-    req = Request(url, headers=_hf_headers())
-    with urlopen(req, timeout=60) as resp, open(tmp, "wb") as handle:
-        total = int(resp.headers.get("content-length") or 0)
-        job["total"] = total
-        done = 0
-        while True:
-            chunk = resp.read(1024 * 256)
-            if not chunk:
-                break
-            handle.write(chunk)
-            done += len(chunk)
-            job["bytes"] = done
-    tmp.replace(dest)
-    job["path"] = str(dest)
+    last: BaseException | None = None
+    for attempt in range(1, 5):
+        try:
+            req = Request(url, headers=_hf_headers())
+            with urlopen(req, timeout=60) as resp, open(tmp, "wb") as handle:
+                total = int(resp.headers.get("content-length") or 0)
+                job["total"] = total
+                done = 0
+                while True:
+                    chunk = resp.read(1024 * 256)
+                    if not chunk:
+                        break
+                    handle.write(chunk)
+                    done += len(chunk)
+                    job["bytes"] = done
+            tmp.replace(dest)
+            job["path"] = str(dest)
+            return
+        except HTTPError as exc:
+            last = exc
+            if exc.code not in {403, 429, 500, 502, 503} or attempt == 4:
+                raise ValueError(_friendly_hf_error(exc)) from exc
+            time.sleep(2 * attempt)
+        except URLError as exc:
+            last = exc
+            if attempt == 4:
+                raise
+            time.sleep(2 * attempt)
+    if last:
+        raise last
 
 
 def start_download(repo: str, filename: str = "", glob: str = "") -> dict[str, Any]:
@@ -136,7 +233,7 @@ def start_download(repo: str, filename: str = "", glob: str = "") -> dict[str, A
 
     def worker() -> None:
         try:
-            names = [filename] if filename else list_hf_files(repo, glob)
+            names = resolve_names(repo, filename=filename, glob=glob)
             names = select_weight_files(names, glob or filename or "")
             if not names:
                 raise ValueError("no matching weight files in repo")

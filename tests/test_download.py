@@ -27,6 +27,54 @@ class DownloadTests(unittest.TestCase):
         with self.assertRaises(ValueError):
             download.start_download("unsloth/Qwen3.8-27B-GGUF")
 
+    def test_guess_filenames_skips_api(self):
+        names = download.guess_filenames(
+            "unsloth/Qwen3.8-27B-GGUF", "*UD-Q2_K_XL.gguf"
+        )
+        self.assertIn("Qwen3.8-27B-UD-Q2_K_XL.gguf", names)
+        resolved = download.resolve_names(
+            "unsloth/Qwen3.8-27B-GGUF",
+            filename="",
+            glob="*UD-Q2_K_XL.gguf",
+        )
+        self.assertEqual(resolved[0], "Qwen3.8-27B-UD-Q2_K_XL.gguf")
+        exact = download.resolve_names(
+            "unsloth/Qwen3.8-27B-GGUF",
+            filename="Qwen3.8-27B-UD-Q2_K_XL.gguf",
+        )
+        self.assertEqual(exact, ["Qwen3.8-27B-UD-Q2_K_XL.gguf"])
+
+    def test_friendly_rate_limit(self):
+        from urllib.error import HTTPError
+        from io import BytesIO
+
+        err = HTTPError(
+            "https://huggingface.co/api/models/x",
+            403,
+            "rate limit exceeded",
+            hdrs=None,
+            fp=BytesIO(b""),
+        )
+        msg = download._friendly_hf_error(err)
+        self.assertIn("huggingface.co/settings/tokens", msg)
+        self.assertIn("403", msg)
+
+    def test_resolve_names_does_not_call_api_when_guessed(self):
+        called = {"n": 0}
+
+        def boom(*_a, **_k):
+            called["n"] += 1
+            raise AssertionError("list_hf_files should not run")
+
+        orig = download.list_hf_files
+        download.list_hf_files = boom  # type: ignore[method-assign]
+        self.addCleanup(lambda: setattr(download, "list_hf_files", orig))
+        names = download.resolve_names(
+            "unsloth/Qwen3.8-27B-GGUF", glob="*UD-Q3_K_XL.gguf"
+        )
+        self.assertEqual(called["n"], 0)
+        self.assertIn("Qwen3.8-27B-UD-Q3_K_XL.gguf", names)
+
     def test_select_weight_files(self):
         names = [
             "README.md",

@@ -76,6 +76,7 @@ def recommend() -> dict[str, Any]:
             "min_vram_mb": rec.min_vram_mb,
             "notes": rec.notes,
             "download_repo": rec.model.repo,
+            "download_filename": rec.model.filename,
             "download_glob": rec.download_glob,
             "path": rec.model.path,
             "context_length": rec.launch.context_length,
