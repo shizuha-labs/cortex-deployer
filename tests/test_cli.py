@@ -35,6 +35,13 @@ class CliTests(unittest.TestCase):
         self.assertEqual(args.command, "setup")
         self.assertEqual(args.recipe, "qwen38-27b-q3-llamacpp.yaml")
 
+    def test_update_in_parser(self):
+        from cortex_deployer.cli import build_parser
+
+        parser = build_parser()
+        args = parser.parse_args(["update"])
+        self.assertEqual(args.command, "update")
+
     def test_recommend_cli(self):
         buf = io.StringIO()
         with redirect_stdout(buf):

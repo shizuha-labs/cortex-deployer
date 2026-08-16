@@ -146,6 +146,23 @@ def _cmd_version(_args: argparse.Namespace) -> int:
     return 0
 
 
+def _cmd_update(_args: argparse.Namespace) -> int:
+    from . import catalog, selfupdate
+
+    cat = catalog.fetch_catalog(force=True, timeout=8.0)
+    latest = selfupdate.latest_from_catalog(cat)
+    print(f"current={__version__} latest={latest or '?'}")
+    try:
+        result = selfupdate.run_update(selfupdate.tarball_from_catalog(cat))
+    except RuntimeError as exc:
+        print(exc, file=sys.stderr)
+        return 1
+    print("updated — restart: cortex-deployer server")
+    if result.get("detail"):
+        print(result["detail"])
+    return 0
+
+
 def build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(
         prog="cortex-deployer",
@@ -156,6 +173,7 @@ def build_parser() -> argparse.ArgumentParser:
 
     sub.add_parser("engines", help="list supported engines")
     sub.add_parser("recipes", help="list bundled example recipes")
+    sub.add_parser("update", help="upgrade this isolated install from GitHub main")
 
     render = sub.add_parser("render", help="print argv for a recipe (no spawn)")
     render.add_argument("recipe")
@@ -225,6 +243,7 @@ def main(argv: list[str] | None = None) -> None:
         "recommend": _cmd_recommend,
         "setup": _cmd_setup,
         "download": _cmd_download,
+        "update": _cmd_update,
         "server": _cmd_server,
         "up": _cmd_server,
         "web": _cmd_server,
