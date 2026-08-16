@@ -15,8 +15,21 @@ from urllib.request import urlopen
 
 from .engines import render_process
 from .paths import logs_dir
+from .recipes import list_examples, load_recipe
 from .spec import recipe_from_dict
 from . import store
+
+
+def _load_recipe_arg(spec: dict[str, Any]):
+    recipe_dict = spec.get("recipe")
+    if isinstance(recipe_dict, str):
+        match = next((p for p in list_examples() if p.name == recipe_dict), None)
+        if match is None:
+            raise ValueError(f"unknown recipe {recipe_dict!r}")
+        return load_recipe(match)
+    if isinstance(recipe_dict, dict):
+        return recipe_from_dict(recipe_dict)
+    raise ValueError("deploy requires kind=adopt or a recipe object / bundled filename")
 
 
 def _pid_alive(pid: int | None) -> bool:
@@ -86,8 +99,14 @@ def resolve_binary(engine: str, override: str = "") -> str:
     }.get(engine)
     if env_key and os.environ.get(env_key):
         return os.environ[env_key]
+    if engine == "llamacpp":
+        from .hostinfo import find_llama_server
+
+        found = find_llama_server()
+        if found:
+            return found
+        return "llama-server.exe" if os.name == "nt" else "llama-server"
     candidates = {
-        "llamacpp": ["llama-server", "llama-server.exe"],
         "vllm": ["python3", "python"],
         "sglang": ["python3", "python"],
         "mlx": ["rapid-mlx"],
@@ -202,13 +221,15 @@ def deploy_from_spec(spec: dict[str, Any]) -> dict[str, Any]:
         )
         return reconcile_one(backend["id"])
 
-    recipe_dict = spec.get("recipe")
-    if isinstance(recipe_dict, dict):
-        recipe = recipe_from_dict(recipe_dict)
-    else:
-        raise ValueError("deploy requires kind=adopt or a recipe object")
+    recipe = _load_recipe_arg(spec)
 
     port = pick_port(spec.get("port") or recipe.launch.port)
+    model_path = str(spec.get("model_path") or recipe.model.path or "").strip()
+    if recipe.engine == "llamacpp" and not model_path:
+        raise ValueError(
+            "llama.cpp needs a local GGUF path — use Download recipe weights or set Weights path"
+        )
+    source_kind = "local_path" if model_path else recipe.model.source_kind
     # Rebuild launch with chosen port.
     data = {
         "schema_version": recipe.schema_version,
@@ -220,8 +241,8 @@ def deploy_from_spec(spec: dict[str, Any]) -> dict[str, Any]:
             "id": recipe.model.id,
             "served_name": recipe.model.served_name,
             "source": {
-                "kind": recipe.model.source_kind,
-                "path": spec.get("model_path") or recipe.model.path,
+                "kind": source_kind,
+                "path": model_path,
                 "repo": recipe.model.repo,
                 "revision": recipe.model.revision,
                 "filename": recipe.model.filename,

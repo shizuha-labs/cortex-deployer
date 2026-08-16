@@ -1,16 +1,16 @@
 schema_version: deployer.recipe.v1
-name: example-mlx
+name: mlx-macos
 engine: mlx
 executor: process
 quant: "8bit"
 min_vram_mb: 0
-notes: Generic MLX process example. Prefer mlx-macos.yaml on Apple Silicon.
+notes: Apple Silicon / Metal. Point path at a local MLX folder (mlx-community 8-bit).
 model:
-  id: example-mlx
-  served_name: example-mlx
+  id: local-mlx
+  served_name: local-mlx
   source:
     kind: local_path
-    path: /models/example-mlx
+    path: /path/to/mlx-model
 launch:
   host: 127.0.0.1
   port: 8014

@@ -2,6 +2,8 @@ schema_version: deployer.recipe.v1
 name: example-vllm
 engine: vllm
 executor: process
+min_vram_mb: 16000
+notes: Single-GPU vLLM. Needs a CUDA Python env.
 model:
   id: example-vllm
   served_name: example-vllm
