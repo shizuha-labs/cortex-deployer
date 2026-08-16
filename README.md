@@ -67,6 +67,7 @@ State lives in `%USERPROFILE%\.cortex-deployer\` (override with `CORTEX_DEPLOYER
 ```bash
 cortex-deployer server --host 127.0.0.1 --port 7480   # also: up, web
 # if 7480 is excluded/busy (common on Windows), the next free high port is used
+# llama-server defaults to 8080; if that port is excluded/busy the next free one is used
 cortex-deployer update                                # pull GitHub main into the isolated venv
 cortex-deployer setup                                 # one-click recommended Qwen
 cortex-deployer recommend
