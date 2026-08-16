@@ -1,0 +1,16 @@
+# Public-side belt: refuse a GitHub push/PR whose tree matches the leaf leak list.
+# Origin still leak-scans before import-beta and to-github. This catches
+# accidental direct GitHub edits.
+name: leak-scan
+on:
+  push:
+    branches: [main, master]
+  pull_request:
+
+jobs:
+  scan:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Refuse secrets and first-party inventory
+        run: bash scripts/leak-scan.sh
