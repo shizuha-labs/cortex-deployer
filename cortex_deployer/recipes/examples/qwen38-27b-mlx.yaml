@@ -1,0 +1,44 @@
+# Rapid-MLX 8-bit Qwen3.8-27B with MTP sidecar + hybrid-cache.
+# Copy, point path + speculative-config model at your local folders,
+# then: cortex-deployer run this.yaml
+#        cortex-deployer connect --upstream http://127.0.0.1:8014/v1 ...
+schema_version: deployer.recipe.v1
+name: qwen38-27b-mlx
+engine: mlx
+executor: process
+quant: "8bit"
+model:
+  id: qwen3.8-27b
+  served_name: qwen3.8-27b
+  source:
+    kind: local_path
+    path: /models/Qwen3.8-27B-8bit
+launch:
+  host: 127.0.0.1
+  port: 8014
+  context_length: 262144
+  extra_args:
+    - --max-tokens
+    - "32768"
+    - --gpu-memory-utilization
+    - "0.85"
+    - --max-num-seqs
+    - "2"
+    - --max-concurrent-requests
+    - "2"
+    - --enable-prefix-cache
+    - --prefix-cache-index
+    - radix
+    - --cache-memory-percent
+    - "0.15"
+    - --hybrid-cache-entries
+    - "8"
+    - --speculative-config
+    - '{"method":"mtp","model":"/models/Qwen3.8-27B-MTP-8bit","num_speculative_tokens":3,"disable_auto_k":false}'
+    - --force-spec-decode
+    - --pin-system-prompt
+connect:
+  aliases:
+    - Qwen3.8-27B-MLX
+    - qwen3.8-27b
+  max_concurrent: 2

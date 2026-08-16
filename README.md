@@ -44,6 +44,7 @@ cortex-deployer download --repo unsloth/Qwen3.8-27B-GGUF --glob '*UD-Q3_K_XL.ggu
 cortex-deployer engines
 cortex-deployer recipes
 cortex-deployer render cortex_deployer/recipes/examples/qwen38-27b-q3-llamacpp.yaml --json
+cortex-deployer run cortex_deployer/recipes/examples/qwen38-27b-mlx.yaml   # foreground; launchd/systemd
 cortex-deployer connect --gateway wss://…/deployer/ws/register --token … --model … --upstream http://127.0.0.1:8080/v1
 ```
 
