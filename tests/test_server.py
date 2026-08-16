@@ -45,7 +45,7 @@ class ServerTests(unittest.TestCase):
         with urlopen(self.base + "/", timeout=5) as resp:
             html = resp.read().decode()
         self.assertIn("Cortex Deployer", html)
-        self.assertIn("Choose a Qwen build", html)
+        self.assertIn("Choose a build", html)
         self.assertIn("Update Deployer", html)
         self.assertIn("Refresh catalog", html)
         self.assertNotIn("id=\"hf-token\"", html)

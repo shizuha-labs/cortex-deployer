@@ -1,23 +1,23 @@
 schema_version: deployer.recipe.v1
-name: qwen38-27b-q3-llamacpp
+name: qwen3-30b-a3b-q3-llamacpp
 engine: llamacpp
 executor: process
 quant: UD-Q3_K_XL
-min_vram_mb: 22000
-notes: 13.4 GB weights + KV. Skip on 16 GB — Q2 already saturates a 5080.
+min_vram_mb: 20000
+notes: 24 GB MoE pick. Skip on 16 GB.
 download_glob: "*UD-Q3_K_XL.gguf"
 model:
-  id: Qwen3.8-27B-Q3
-  served_name: Qwen3.8-27B-Q3
+  id: Qwen3-30B-A3B-Q3
+  served_name: Qwen3-30B-A3B-Q3
   source:
     kind: huggingface
-    repo: unsloth/Qwen3.8-27B-GGUF
-    filename: Qwen3.8-27B-UD-Q3_K_XL.gguf
+    repo: unsloth/Qwen3-30B-A3B-GGUF
+    filename: Qwen3-30B-A3B-UD-Q3_K_XL.gguf
     path: ""
 launch:
   host: 127.0.0.1
   port: 8080
-  context_length: 16384
+  context_length: 65536
   extra_args:
     - --n-gpu-layers
     - "99"
@@ -25,5 +25,5 @@ launch:
     - "1"
 connect:
   aliases:
-    - Qwen3.8-27B-Q3
+    - Qwen3-30B-A3B-Q3
   max_concurrent: 1

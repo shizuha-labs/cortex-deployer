@@ -84,27 +84,10 @@ def recommend() -> dict[str, Any]:
         }
         row["example"] = is_example_recipe(row, apple=apple)
         rows.append(row)
-    order = {"recommended": 0, "ok": 1, "tight": 2, "unknown": 3, "cpu": 4, "skip": 5}
-    rows.sort(
-        key=lambda r: (
-            order.get(r["fit"], 9),
-            1 if r["example"] else 0,
-            -int(r["min_vram_mb"] or 0),
-            r["file"],
-        )
-    )
-    best = next((r for r in rows if r["fit"] == "recommended" and not r.get("example")), None)
-    if best is None:
-        best = next((r for r in rows if r["fit"] == "recommended"), None)
-    if best:
-        for row in rows:
-            if (
-                row["fit"] == "recommended"
-                and row["file"] != best["file"]
-                and row.get("engine") != "mlx"
-            ):
-                row["fit"] = "ok"
     cat = catalog_mod.fetch_catalog()
+    tier = pick_tier(cat.get("hardware_tiers") or [], have, apple=apple)
+    wanted = ((tier or {}).get("recommend") or {})
+    default_id = str(wanted.get("default") or "")
     models: list[dict[str, Any]] = []
     for model in cat.get("models") or []:
         if not isinstance(model, dict):
@@ -120,8 +103,11 @@ def recommend() -> dict[str, Any]:
             if item.get("engine") == "mlx" and apple:
                 item["fit"] = "recommended"
             quants.append(item)
-        fits = [q for q in quants if q.get("fit") == "recommended"]
-        pick = max(fits, key=lambda q: int(q.get("min_vram_mb") or 0)) if fits else None
+        prefer = str(wanted.get(str(model.get("id") or "")) or "")
+        pick = next((q for q in quants if q.get("id") == prefer), None)
+        if pick is None:
+            fits = [q for q in quants if q.get("fit") == "recommended"]
+            pick = max(fits, key=lambda q: int(q.get("min_vram_mb") or 0)) if fits else None
         for quant in quants:
             if (
                 quant.get("fit") == "recommended"
@@ -134,16 +120,56 @@ def recommend() -> dict[str, Any]:
             "name": model.get("name"),
             "summary": model.get("summary"),
             "params": model.get("params"),
+            "role": model.get("role") or "",
             "quants": quants,
             "recommended_quant": (pick or {}).get("id"),
             "recommended_recipe": (pick or {}).get("recipe"),
         })
+    default_recipe = ""
+    for model in models:
+        if model.get("recommended_quant") == default_id:
+            default_recipe = str(model.get("recommended_recipe") or "")
+            break
+    order = {"recommended": 0, "ok": 1, "tight": 2, "unknown": 3, "cpu": 4, "skip": 5}
+    rows.sort(
+        key=lambda r: (
+            0 if default_recipe and r["file"] == default_recipe else 1,
+            order.get(r["fit"], 9),
+            1 if r["example"] else 0,
+            -int(r["min_vram_mb"] or 0),
+            r["file"],
+        )
+    )
+    best = next((r for r in rows if default_recipe and r["file"] == default_recipe), None)
+    if best is None:
+        best = next((r for r in rows if r["fit"] == "recommended" and not r.get("example")), None)
+    if best is None:
+        best = next((r for r in rows if r["fit"] == "recommended"), None)
+    if best and not apple:
+        for row in rows:
+            if (
+                row["fit"] == "recommended"
+                and row["file"] != best["file"]
+                and row.get("engine") != "mlx"
+            ):
+                row["fit"] = "ok"
     return {
         "vram_mb": have,
         "apple": apple,
+        "tier": (tier or {}).get("id"),
         "best": best["file"] if best else None,
         "recipes": rows,
         "models": models,
         "catalog_source": cat.get("source"),
         "catalog_live": bool(cat.get("fetched")),
     }
+
+
+def pick_tier(tiers: list[Any], have: int, *, apple: bool) -> dict[str, Any] | None:
+    typed = [t for t in tiers if isinstance(t, dict)]
+    if apple:
+        return next((t for t in typed if t.get("id") == "apple"), None)
+    nvs = [t for t in typed if int(t.get("vram_mb") or 0) > 0]
+    if not nvs:
+        return None
+    return min(nvs, key=lambda t: abs(int(t.get("vram_mb") or 0) - have))
