@@ -66,6 +66,7 @@ State lives in `%USERPROFILE%\.cortex-deployer\` (override with `CORTEX_DEPLOYER
 
 ```bash
 cortex-deployer server --host 127.0.0.1 --port 7480   # also: up, web
+# if 7480 is excluded/busy (common on Windows), the next free high port is used
 cortex-deployer setup                                 # one-click recommended Qwen
 cortex-deployer recommend
 cortex-deployer download --repo unsloth/Qwen3.8-27B-GGUF --glob '*UD-Q3_K_XL.gguf'
