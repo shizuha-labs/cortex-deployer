@@ -1,0 +1,34 @@
+from __future__ import annotations
+
+from .base import ProcessLaunch, _model_path
+from ..spec import Recipe
+
+
+def render_mlx(recipe: Recipe) -> ProcessLaunch:
+    if recipe.engine != "mlx":
+        raise ValueError("mlx renderer received a different engine")
+    path = _model_path(recipe)
+    # rapid-mlx is the production-shaped default; extra_args can switch binary.
+    binary = "rapid-mlx"
+    rest = list(recipe.launch.extra_args)
+    if rest and not rest[0].startswith("-"):
+        binary = rest.pop(0)
+    argv = [
+        binary,
+        "serve",
+        path,
+        "--host",
+        recipe.launch.host,
+        "--port",
+        str(recipe.launch.port),
+        "--served-model-name",
+        recipe.model.served_name,
+    ]
+    argv.extend(rest)
+    return ProcessLaunch(
+        argv=tuple(argv),
+        env=recipe.launch.env,
+        host=recipe.launch.host,
+        port=recipe.launch.port,
+        engine="mlx",
+    )

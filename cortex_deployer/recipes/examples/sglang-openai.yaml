@@ -1,0 +1,18 @@
+schema_version: deployer.recipe.v1
+name: example-sglang
+engine: sglang
+executor: process
+model:
+  id: example-sglang
+  served_name: example-sglang
+  source:
+    kind: huggingface
+    repo: org/example-model
+launch:
+  host: 127.0.0.1
+  port: 30000
+  context_length: 8192
+  extra_args: []
+connect:
+  aliases: []
+  max_concurrent: 4

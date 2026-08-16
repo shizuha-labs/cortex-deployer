@@ -1,0 +1,20 @@
+# PR gate. Context name: premerge / test (pull_request)
+name: premerge
+on:
+  pull_request:
+    branches: [main, master]
+  push:
+    branches: [master]
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+      - name: Unit tests + leak scan
+        run: |
+          set -euo pipefail
+          python3 -m pip install -q httpx websockets pyyaml
+          python3 -m unittest discover -s tests -t . -v
+          bash scripts/leak-scan.sh

@@ -1,0 +1,21 @@
+schema_version: deployer.recipe.v1
+name: example-llamacpp-cuda
+engine: llamacpp
+executor: process
+quant: Q4_K_M
+model:
+  id: example-gguf
+  served_name: example-gguf
+  source:
+    kind: local_path
+    path: /models/example.Q4_K_M.gguf
+launch:
+  host: 127.0.0.1
+  port: 8080
+  context_length: 8192
+  extra_args:
+    - --n-gpu-layers
+    - "99"
+connect:
+  aliases: []
+  max_concurrent: 1

@@ -1,0 +1,20 @@
+schema_version: deployer.recipe.v1
+name: example-vllm
+engine: vllm
+executor: process
+model:
+  id: example-vllm
+  served_name: example-vllm
+  source:
+    kind: huggingface
+    repo: org/example-model
+launch:
+  host: 127.0.0.1
+  port: 8000
+  context_length: 8192
+  extra_args:
+    - --gpu-memory-utilization
+    - "0.90"
+connect:
+  aliases: []
+  max_concurrent: 4

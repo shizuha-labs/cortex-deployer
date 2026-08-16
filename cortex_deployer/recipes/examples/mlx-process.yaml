@@ -1,0 +1,18 @@
+schema_version: deployer.recipe.v1
+name: example-mlx
+engine: mlx
+executor: process
+quant: "8bit"
+model:
+  id: example-mlx
+  served_name: example-mlx
+  source:
+    kind: local_path
+    path: /models/example-mlx
+launch:
+  host: 127.0.0.1
+  port: 8014
+  extra_args: []
+connect:
+  aliases: []
+  max_concurrent: 2
