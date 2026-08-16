@@ -98,7 +98,11 @@ def pick_release_assets(
 
 
 def _http_json(url: str) -> dict[str, Any]:
-    req = Request(url, headers={"user-agent": "cortex-deployer", "accept": "application/json"})
+    headers = {"user-agent": "cortex-deployer/0.3.5", "accept": "application/json"}
+    token = os.environ.get("GITHUB_TOKEN") or os.environ.get("GH_TOKEN") or ""
+    if token.strip():
+        headers["authorization"] = f"Bearer {token.strip()}"
+    req = Request(url, headers=headers)
     with urlopen(req, timeout=30) as resp:
         return json.loads(resp.read().decode())
 

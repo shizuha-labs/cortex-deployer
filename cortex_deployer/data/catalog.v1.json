@@ -53,6 +53,7 @@
           "weight_gb": 10.7,
           "context_length": 8192,
           "download_repo": "unsloth/Qwen3.8-27B-GGUF",
+          "download_filename": "Qwen3.8-27B-UD-Q2_K_XL.gguf",
           "download_glob": "*UD-Q2_K_XL.gguf",
           "notes": "Fits 8–12 GB. Quality drop vs Q3. Use only if Q3 OOMs."
         },
@@ -66,6 +67,7 @@
           "weight_gb": 13.4,
           "context_length": 16384,
           "download_repo": "unsloth/Qwen3.8-27B-GGUF",
+          "download_filename": "Qwen3.8-27B-UD-Q3_K_XL.gguf",
           "download_glob": "*UD-Q3_K_XL.gguf",
           "notes": "Recommended on 16 GB Blackwell (RTX 5080). Q4 will not fit."
         },
@@ -79,6 +81,7 @@
           "weight_gb": 17.9,
           "context_length": 122880,
           "download_repo": "unsloth/Qwen3.8-27B-GGUF",
+          "download_filename": "Qwen3.8-27B-UD-Q4_K_XL.gguf",
           "download_glob": "*UD-Q4_K_XL.gguf",
           "notes": "Quality pick on 24 GB (RTX 3090 class). Skip on 16 GB."
         },
