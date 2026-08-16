@@ -93,7 +93,17 @@ def recommend() -> dict[str, Any]:
             r["file"],
         )
     )
-    best = next((r for r in rows if r["fit"] == "recommended"), None)
+    best = next((r for r in rows if r["fit"] == "recommended" and not r.get("example")), None)
+    if best is None:
+        best = next((r for r in rows if r["fit"] == "recommended"), None)
+    if best:
+        for row in rows:
+            if (
+                row["fit"] == "recommended"
+                and row["file"] != best["file"]
+                and row.get("engine") != "mlx"
+            ):
+                row["fit"] = "ok"
     cat = catalog_mod.fetch_catalog()
     models: list[dict[str, Any]] = []
     for model in cat.get("models") or []:
@@ -112,6 +122,13 @@ def recommend() -> dict[str, Any]:
             quants.append(item)
         fits = [q for q in quants if q.get("fit") == "recommended"]
         pick = max(fits, key=lambda q: int(q.get("min_vram_mb") or 0)) if fits else None
+        for quant in quants:
+            if (
+                quant.get("fit") == "recommended"
+                and pick
+                and quant.get("id") != pick.get("id")
+            ):
+                quant["fit"] = "ok"
         models.append({
             "id": model.get("id"),
             "name": model.get("name"),

@@ -185,6 +185,8 @@ HELP
   echo >&2
   echo "NVIDIA driver is the only extra host package for GPU. The app" >&2
   echo "fetches official llama.cpp builds and the GGUF itself." >&2
+  echo "Re-run this installer to upgrade. Models in ${PREFIX}/models stay." >&2
+  echo "If cortex-deployer server is running, stop it and start it again." >&2
 
   if [ "$start" -eq 1 ]; then
     exec "${BIN_DIR}/cortex-deployer" server

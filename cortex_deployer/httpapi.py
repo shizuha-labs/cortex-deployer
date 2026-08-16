@@ -8,8 +8,10 @@ from __future__ import annotations
 
 import errno
 import json
+import os
 import posixpath
 import threading
+import time
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
 from typing import Any
@@ -30,6 +32,11 @@ from .runtime import (
 from .spec import ENGINE_KINDS
 
 WEB_DIR = Path(__file__).resolve().parent / "web"
+LISTEN: dict[str, Any] = {"host": "127.0.0.1", "port": 7480}
+
+
+def _shown_host(host: str) -> str:
+    return "127.0.0.1" if host in {"0.0.0.0", "::", ""} else str(host)
 
 
 def _json_bytes(payload: Any, status: int = 200) -> tuple[int, bytes, str]:
@@ -113,14 +120,63 @@ def handle(method: str, path: str, body: bytes) -> tuple[int, bytes, str]:
         return _json_bytes(job)
     if method == "GET" and route == "/api/local-models":
         return _json_bytes({"models": download.list_local_models()})
-    if method == "GET" and route == "/api/settings":
-        return _json_bytes({"hf_token_set": bool(download.hf_token())})
-    if method == "POST" and route == "/api/settings":
-        if not isinstance(payload, dict):
-            return _json_bytes({"error": "object required"}, 400)
-        if "hf_token" in payload:
-            download.save_hf_token(str(payload.get("hf_token") or ""))
-        return _json_bytes({"hf_token_set": bool(download.hf_token())})
+    if method == "GET" and route == "/api/version":
+        from . import selfupdate
+
+        cat = catalog.fetch_catalog()
+        latest = selfupdate.latest_from_catalog(cat)
+        return _json_bytes(
+            {
+                "version": __version__,
+                "latest": latest or __version__,
+                "update_available": selfupdate.update_available(latest),
+                "catalog_source": cat.get("source"),
+                "catalog_live": bool(cat.get("fetched")),
+            }
+        )
+    if method == "POST" and route == "/api/catalog/refresh":
+        cat = catalog.fetch_catalog(force=True, timeout=8.0)
+        return _json_bytes(
+            {
+                "ok": True,
+                "source": cat.get("source"),
+                "fetched": bool(cat.get("fetched")),
+                "updated_at": cat.get("updated_at"),
+            }
+        )
+    if method == "POST" and route == "/api/update":
+        from . import selfupdate
+
+        try:
+            cat = catalog.fetch_catalog(force=True, timeout=8.0)
+            tarball = selfupdate.tarball_from_catalog(cat)
+            result = selfupdate.spawn_updater(
+                tarball,
+                _shown_host(str(LISTEN["host"])),
+                int(LISTEN["port"]),
+            )
+        except RuntimeError as exc:
+            return _json_bytes({"error": str(exc)}, 500)
+
+        def _die() -> None:
+            time.sleep(0.3)
+            os._exit(0)
+
+        threading.Thread(target=_die, daemon=True).start()
+        return _json_bytes(result)
+    if method == "POST" and route == "/api/restart":
+        from . import selfupdate
+
+        shown = _shown_host(str(LISTEN["host"]))
+        port = int(LISTEN["port"])
+
+        def _later() -> None:
+            time.sleep(0.4)
+            selfupdate.spawn_restart(shown, port)
+            os._exit(0)
+
+        threading.Thread(target=_later, daemon=True).start()
+        return _json_bytes({"ok": True, "restarting": True})
     if method == "GET" and route == "/api/setup":
         return _json_bytes({"jobs": setup.list_jobs()})
     if method == "POST" and route == "/api/setup":
@@ -399,7 +455,26 @@ def candidate_ports(preferred: int) -> list[int]:
 def serve(host: str = "127.0.0.1", port: int = 7480) -> ThreadingHTTPServer:
     last: OSError | None = None
     tried: list[int] = []
-    for candidate in candidate_ports(int(port)):
+    preferred = int(port)
+    if preferred >= _MIN_UNPRIVILEGED:
+        for attempt in range(4):
+            try:
+                httpd = ThreadingHTTPServer((host, preferred), Handler)
+            except OSError as exc:
+                last = exc
+                if not _bind_unavailable(exc):
+                    raise
+                if attempt < 3:
+                    time.sleep(0.2)
+                continue
+            httpd.daemon_threads = True
+            LISTEN["host"] = host
+            LISTEN["port"] = httpd.server_address[1]
+            return httpd
+        tried.append(preferred)
+    for candidate in candidate_ports(preferred):
+        if candidate == preferred:
+            continue
         tried.append(candidate)
         try:
             httpd = ThreadingHTTPServer((host, candidate), Handler)
@@ -409,6 +484,8 @@ def serve(host: str = "127.0.0.1", port: int = 7480) -> ThreadingHTTPServer:
                 raise
             continue
         httpd.daemon_threads = True
+        LISTEN["host"] = host
+        LISTEN["port"] = httpd.server_address[1]
         return httpd
     detail = last or OSError("no free listen port")
     raise OSError(

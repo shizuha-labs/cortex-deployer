@@ -1,8 +1,12 @@
 {
   "schema": "cortex.deployer.catalog.v1",
-  "updated_at": "2026-08-16T16:00:00Z",
+  "updated_at": "2026-08-17T12:00:00Z",
   "source": "https://cortex.shizuha.com/deployer/catalog.json",
   "notes": "Curated hardware × model × quant pairs for Cortex Deployer. Live GPU fit happens on the local app; this file is the shared recommendation source.",
+  "deployer_release": {
+    "version": "0.3.6",
+    "tarball": "https://github.com/shizuha-labs/cortex-deployer/archive/refs/heads/main.tar.gz"
+  },
   "hardware_tiers": [
     {
       "id": "16gb",

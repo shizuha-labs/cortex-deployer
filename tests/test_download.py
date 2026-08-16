@@ -56,8 +56,9 @@ class DownloadTests(unittest.TestCase):
             fp=BytesIO(b""),
         )
         msg = download._friendly_hf_error(err)
-        self.assertIn("huggingface.co/settings/tokens", msg)
+        self.assertIn("Download blocked", msg)
         self.assertIn("403", msg)
+        self.assertNotIn("settings/tokens", msg)
 
     def test_resolve_names_does_not_call_api_when_guessed(self):
         called = {"n": 0}
@@ -91,3 +92,10 @@ class DownloadTests(unittest.TestCase):
         self.assertIn("Qwen3.8-27B-UD-Q3_K_XL.gguf", all_gguf)
         self.assertNotIn("mmproj-F16.gguf", all_gguf)
         self.assertNotIn("README.md", all_gguf)
+
+    def test_candidate_urls_include_mirror(self):
+        urls = download._candidate_urls(
+            "unsloth/Qwen3.8-27B-GGUF", "Qwen3.8-27B-UD-Q3_K_XL.gguf"
+        )
+        self.assertTrue(any("huggingface.co" in u for u in urls))
+        self.assertTrue(any("hf-mirror.com" in u for u in urls))

@@ -46,6 +46,10 @@ class ServerTests(unittest.TestCase):
             html = resp.read().decode()
         self.assertIn("Cortex Deployer", html)
         self.assertIn("Choose a Qwen build", html)
+        self.assertIn("Update Deployer", html)
+        self.assertIn("Refresh catalog", html)
+        self.assertNotIn("id=\"hf-token\"", html)
+        self.assertNotIn("id=\"hf-box\"", html)
 
     def test_host_and_recipes(self):
         _, host = self._json("GET", "/api/host")
@@ -139,6 +143,31 @@ class ServerTests(unittest.TestCase):
             {"repo": "unsloth/Qwen3.8-27B-GGUF"},
         )
         self.assertEqual(status, 400)
+
+    def test_version_and_catalog_refresh(self):
+        from cortex_deployer import __version__
+
+        status, ver = self._json("GET", "/api/version")
+        self.assertEqual(status, 200)
+        self.assertEqual(ver["version"], __version__)
+        self.assertIn("update_available", ver)
+        status, cat = self._json("POST", "/api/catalog/refresh", {})
+        self.assertEqual(status, 200)
+        self.assertTrue(cat["ok"])
+
+    def test_update_spawns_then_exits(self):
+        from unittest.mock import patch
+
+        fake = {"ok": True, "restarting": True, "previous": "0.3.5"}
+        with (
+            patch("cortex_deployer.selfupdate.spawn_updater", return_value=fake) as spawn,
+            patch("cortex_deployer.httpapi.os._exit"),
+            patch("cortex_deployer.httpapi.time.sleep"),
+        ):
+            status, body = self._json("POST", "/api/update", {})
+        self.assertEqual(status, 200)
+        self.assertTrue(body.get("ok") or body.get("restarting"))
+        spawn.assert_called_once()
 
     def test_cors_options(self):
         req = Request(self.base + "/v1/models", method="OPTIONS")
