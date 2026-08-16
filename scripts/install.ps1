@@ -15,20 +15,20 @@ function Info([string]$msg) { Write-Host "cortex-deployer-install: $msg" }
 New-Item -ItemType Directory -Force -Path $Prefix, (Join-Path $Prefix "tmp"), (Join-Path $Prefix "bin"), $BinDir | Out-Null
 
 $uv = Join-Path $Prefix "bin\uv.exe"
-if (-not (Test-Path $uv)) {
-  $onPath = Get-Command uv -ErrorAction SilentlyContinue
-  if ($onPath) {
-    $uv = $onPath.Source
-  } else {
-    $zip = Join-Path $Prefix "tmp\uv.zip"
-    $url = "https://github.com/astral-sh/uv/releases/download/$UvVersion/uv-x86_64-pc-windows-msvc.zip"
-    Info "fetch $url"
-    Invoke-WebRequest -Uri $url -OutFile $zip
-    Expand-Archive -Path $zip -DestinationPath (Join-Path $Prefix "tmp\uv") -Force
-    $found = Get-ChildItem -Path (Join-Path $Prefix "tmp\uv") -Recurse -Filter uv.exe | Select-Object -First 1
-    if (-not $found) { throw "uv.exe missing from archive" }
-    Copy-Item $found.FullName $uv -Force
-  }
+$uvOk = $false
+if (Test-Path $uv) {
+  try { & $uv --version | Out-Null; $uvOk = $true } catch { $uvOk = $false }
+}
+if (-not $uvOk) {
+  $zip = Join-Path $Prefix "tmp\uv.zip"
+  $url = "https://github.com/astral-sh/uv/releases/download/$UvVersion/uv-x86_64-pc-windows-msvc.zip"
+  Info "bootstrapping our own uv $UvVersion (ignoring any host uv/python)"
+  Info "fetch $url"
+  Invoke-WebRequest -Uri $url -OutFile $zip
+  Expand-Archive -Path $zip -DestinationPath (Join-Path $Prefix "tmp\uv") -Force
+  $found = Get-ChildItem -Path (Join-Path $Prefix "tmp\uv") -Recurse -Filter uv.exe | Select-Object -First 1
+  if (-not $found) { throw "uv.exe missing from archive" }
+  Copy-Item $found.FullName $uv -Force
 }
 
 $env:UV_PYTHON_INSTALL_DIR = Join-Path $Prefix "python"
