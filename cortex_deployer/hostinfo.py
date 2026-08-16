@@ -105,6 +105,14 @@ def find_llama_server() -> str | None:
     for path in extras:
         if path.is_file():
             return str(path)
+    try:
+        from .enginebin import cached_server
+
+        cached = cached_server()
+        if cached:
+            return cached
+    except Exception:  # noqa: BLE001 — discovery must not raise
+        pass
     return None
 
 
