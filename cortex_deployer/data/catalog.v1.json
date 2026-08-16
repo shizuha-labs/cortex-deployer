@@ -4,7 +4,7 @@
   "source": "https://cortex.shizuha.com/deployer/catalog.json",
   "notes": "Curated hardware × model × quant pairs for Cortex Deployer. Live GPU fit happens on the local app; this file is the shared recommendation source.",
   "deployer_release": {
-    "version": "0.3.6",
+    "version": "0.3.7",
     "tarball": "https://github.com/shizuha-labs/cortex-deployer/archive/refs/heads/main.tar.gz"
   },
   "hardware_tiers": [

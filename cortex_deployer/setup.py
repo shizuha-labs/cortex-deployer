@@ -94,6 +94,7 @@ def start_setup(recipe_file: str = "") -> dict[str, Any]:
                     "autostart": True,
                 }
             )
+            backend = runtime.wait_started(backend["id"], timeout=8.0)
             job["backend_id"] = backend.get("id") or ""
             job["base_url"] = backend.get("base_url") or ""
             job["state"] = "done"
