@@ -10,6 +10,7 @@ import sys
 
 from . import __version__
 from .client import add_connect_arguments, run_connect
+from .hostinfo import advertise_urls, default_bind_host
 from .engines import render_process
 from .recipes import list_examples, load_recipe
 from .runtime import resolve_binary
@@ -123,11 +124,12 @@ def _cmd_server(args: argparse.Namespace) -> int:
     httpd = serve(host, port)
     bound_host, bound_port = httpd.server_address[:2]
     started = autostart_persisted()
-    shown = "127.0.0.1" if bound_host in {"0.0.0.0", "::", ""} else bound_host
-    url = f"http://{shown}:{bound_port}/"
+    urls = advertise_urls(str(bound_host), int(bound_port))
     if bound_port != port:
         print(f"port {port} unavailable; listening on {bound_port}", flush=True)
-    print(f"Cortex Deployer UI  {url}")
+    print(f"Cortex Deployer UI  {urls[0]}")
+    for extra in urls[1:]:
+        print(f"                    {extra}")
     print("API                 /api/backends  /api/recommend  /api/setup  /api/downloads  /v1/models")
     if started:
         print(f"autostart           {len(started)} backend(s)")
@@ -215,7 +217,11 @@ def build_parser() -> argparse.ArgumentParser:
         aliases=["up", "web"],
         help="start the local control-plane UI (DeepSeek Harness-style)",
     )
-    server.add_argument("--host", default="127.0.0.1")
+    server.add_argument(
+        "--host",
+        default=default_bind_host(),
+        help="listen address (Linux/WSL default 0.0.0.0 so the distro IP is reachable; Windows default 127.0.0.1)",
+    )
     server.add_argument(
         "--port",
         type=int,
