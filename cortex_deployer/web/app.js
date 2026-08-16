@@ -14,12 +14,21 @@ const rowsEl = document.getElementById("rows");
 const countEl = document.getElementById("count");
 const statsEl = document.getElementById("stats");
 const hostline = document.getElementById("hostline");
+const fitline = document.getElementById("fitline");
+const binwarn = document.getElementById("binwarn");
 const deployDlg = document.getElementById("deploy-dlg");
 const adoptDlg = document.getElementById("adopt-dlg");
 const logDlg = document.getElementById("log-dlg");
+const connectDlg = document.getElementById("connect-dlg");
 const recipeSel = document.getElementById("recipe");
 
 let recipes = [];
+
+function esc(s) {
+  return String(s ?? "").replace(/[&<>"']/g, (c) => ({
+    "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;",
+  }[c]));
+}
 
 function pill(backend) {
   if (backend.healthy) return '<span class="dot ok"></span>healthy';
@@ -53,6 +62,7 @@ function render(backends) {
       <td class="actions">
         <button data-act="start" data-id="${b.id}">Start</button>
         <button data-act="stop" data-id="${b.id}">Stop</button>
+        <button data-act="connect" data-id="${b.id}" data-name="${esc(b.served_name || b.name)}">Cortex</button>
         <button data-act="logs" data-id="${b.id}">Logs</button>
         <button class="danger" data-act="del" data-id="${b.id}">Remove</button>
       </td>
@@ -60,25 +70,79 @@ function render(backends) {
   `).join("");
 }
 
-function esc(s) {
-  return String(s ?? "").replace(/[&<>"']/g, (c) => ({
-    "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;",
-  }[c]));
+function selectedRecipe() {
+  return recipes.find((r) => r.file === recipeSel.value);
+}
+
+function paintRecipeNote() {
+  const rec = selectedRecipe();
+  const note = document.getElementById("recipe-note");
+  if (!rec) { note.textContent = ""; return; }
+  const bits = [rec.fit, rec.min_vram_mb ? `needs ≥${rec.min_vram_mb} MB` : "", rec.notes || ""];
+  note.textContent = bits.filter(Boolean).join(" · ");
+  if (rec.served_name && !document.getElementById("served").value) {
+    document.getElementById("served").placeholder = rec.served_name;
+  }
+}
+
+function paintChatModels(backends) {
+  const sel = document.getElementById("chat-model");
+  if (!sel) return;
+  const prev = sel.value;
+  const live = (backends || []).filter((b) => b.healthy || b.state === "running");
+  const opts = live.length ? live : (backends || []);
+  sel.innerHTML = opts.map((b) => {
+    const id = b.served_name || b.name || b.id;
+    return `<option value="${esc(id)}">${esc(id)}</option>`;
+  }).join("") || '<option value="">(no backends)</option>';
+  if (prev && [...sel.options].some((o) => o.value === prev)) sel.value = prev;
+}
+
+function paintLocal(models) {
+  const el = document.getElementById("local-models");
+  if (!el) return;
+  if (!models || !models.length) {
+    el.textContent = "none yet — download from Deploy model";
+    return;
+  }
+  el.innerHTML = models.map((m) =>
+    `<div><code>${esc(m.path)}</code> <span class="muted">${Math.round((m.bytes || 0) / 1048576)} MB</span></div>`
+  ).join("");
 }
 
 async function refresh() {
-  const [host, list] = await Promise.all([api("/api/host"), api("/api/backends")]);
-  const gpus = (host.gpus || []).map((g) => g.name).join(", ") || "no GPU detected";
+  const [host, list, dls] = await Promise.all([
+    api("/api/host"),
+    api("/api/backends"),
+    api("/api/downloads").catch(() => ({ local: [] })),
+  ]);
+  const gpus = (host.gpus || []).map((g) => `${g.name}${g.memory_mb ? " " + g.memory_mb + "MB" : ""}`).join(", ") || "no GPU detected";
   hostline.textContent = `${host.os} ${host.arch} · ${host.hostname} · ${gpus}`;
+  const llama = (host.binaries || {}).llamacpp;
+  if (binwarn) {
+    if (llama) {
+      binwarn.textContent = "";
+    } else if (host.os === "Windows") {
+      binwarn.textContent = "llama-server not found. Put llama-server.exe on PATH, under %USERPROFILE%\\llama.cpp\\, or set CORTEX_DEPLOYER_LLAMA_SERVER.";
+    } else {
+      binwarn.textContent = "llama-server not found. Install llama.cpp, put llama-server on PATH, or set CORTEX_DEPLOYER_LLAMA_SERVER.";
+    }
+  }
   render(list.backends || []);
+  paintChatModels(list.backends || []);
+  paintLocal(dls.local || []);
 }
 
 async function loadRecipes() {
-  const data = await api("/api/recipes");
+  const data = await api("/api/recommend");
   recipes = data.recipes || [];
   recipeSel.innerHTML = recipes.map((r) =>
-    `<option value="${esc(r.file)}">${esc(r.file)} · ${esc(r.engine)}</option>`
+    `<option value="${esc(r.file)}">${esc(r.fit)} · ${esc(r.name)} · ${esc(r.quant || r.engine)}</option>`
   ).join("");
+  if (data.best) recipeSel.value = data.best;
+  const vram = data.vram_mb ? `${data.vram_mb} MB NVIDIA` : (data.apple ? "Apple Silicon" : "no dedicated NVIDIA VRAM");
+  fitline.textContent = `GPU fit: ${vram}. Recommended recipe: ${data.best || "none"}. A 16 GB card should use Q3, not Q4.`;
+  paintRecipeNote();
 }
 
 document.getElementById("btn-refresh").onclick = () => refresh().catch(console.error);
@@ -87,31 +151,66 @@ document.getElementById("btn-adopt").onclick = () => { document.getElementById("
 document.getElementById("deploy-cancel").onclick = () => deployDlg.close();
 document.getElementById("adopt-cancel").onclick = () => adoptDlg.close();
 document.getElementById("log-close").onclick = () => logDlg.close();
+document.getElementById("connect-cancel").onclick = () => connectDlg.close();
+recipeSel.onchange = paintRecipeNote;
+
+document.getElementById("btn-dl").onclick = async () => {
+  const rec = selectedRecipe();
+  const status = document.getElementById("dl-status");
+  if (!rec || !rec.download_repo) {
+    status.textContent = "This recipe has no Hugging Face repo.";
+    return;
+  }
+  status.textContent = "starting download…";
+  try {
+    const job = await api("/api/downloads", {
+      method: "POST",
+      body: JSON.stringify({ repo: rec.download_repo, glob: rec.download_glob || "" }),
+    });
+    const tick = async () => {
+      const all = await api("/api/downloads");
+      const cur = (all.jobs || []).find((j) => j.id === job.id);
+      if (!cur) return;
+      if (cur.state === "done") {
+        status.textContent = "saved " + cur.path;
+        if (cur.path) document.getElementById("model-path").value = cur.path;
+        return;
+      }
+      if (cur.state === "error") {
+        status.textContent = cur.error || "download failed";
+        return;
+      }
+      status.textContent = `${cur.state} ${cur.filename || ""} ${cur.bytes || 0}/${cur.total || "?"}`;
+      setTimeout(tick, 1500);
+    };
+    tick();
+  } catch (e) {
+    status.textContent = e.message;
+  }
+};
 
 document.getElementById("deploy-form").onsubmit = async (ev) => {
   ev.preventDefault();
   const err = document.getElementById("deploy-err");
   err.textContent = "";
-  const file = recipeSel.value;
-  const rec = recipes.find((r) => r.file === file);
+  const rec = selectedRecipe();
   try {
-    const full = await fetch("/api/recipes").then((r) => r.json());
-    const chosen = (full.recipes || []).find((r) => r.file === file) || rec;
     const recipeBody = {
       schema_version: "deployer.recipe.v1",
-      name: chosen.name,
-      engine: chosen.engine,
+      name: rec.name,
+      engine: rec.engine,
       executor: "process",
-      quant: chosen.quant || "",
+      quant: rec.quant || "",
+      min_vram_mb: rec.min_vram_mb || 0,
       model: {
-        id: document.getElementById("served").value || chosen.served_name,
-        served_name: document.getElementById("served").value || chosen.served_name,
+        id: document.getElementById("served").value || rec.served_name,
+        served_name: document.getElementById("served").value || rec.served_name,
         source: { kind: "local_path", path: document.getElementById("model-path").value },
       },
       launch: {
         host: "127.0.0.1",
         port: Number(document.getElementById("port").value) || 0,
-        context_length: Number(document.getElementById("ctx").value) || chosen.context_length || 8192,
+        context_length: Number(document.getElementById("ctx").value) || rec.context_length || 8192,
       },
     };
     await api("/api/backends", {
@@ -120,7 +219,7 @@ document.getElementById("deploy-form").onsubmit = async (ev) => {
         kind: "recipe",
         recipe: recipeBody,
         model_path: document.getElementById("model-path").value,
-        served_name: document.getElementById("served").value || chosen.served_name,
+        served_name: document.getElementById("served").value || rec.served_name,
         context_length: Number(document.getElementById("ctx").value) || undefined,
         port: Number(document.getElementById("port").value) || undefined,
         autostart: true,
@@ -153,6 +252,82 @@ document.getElementById("adopt-form").onsubmit = async (ev) => {
   }
 };
 
+document.getElementById("connect-form").onsubmit = async (ev) => {
+  ev.preventDefault();
+  const err = document.getElementById("connect-err");
+  err.textContent = "";
+  const id = document.getElementById("connect-id").value;
+  try {
+    const gw = document.getElementById("connect-gw").value;
+    if (gw) localStorage.setItem("cortex_deployer_gateway", gw);
+    await api(`/api/backends/${id}/connect`, {
+      method: "POST",
+      body: JSON.stringify({
+        gateway: gw,
+        token: document.getElementById("connect-tok").value,
+        model: document.getElementById("connect-model").value,
+      }),
+    });
+    connectDlg.close();
+    await refresh();
+  } catch (e) {
+    err.textContent = e.message;
+  }
+};
+
+document.getElementById("chat-send").onclick = async () => {
+  const out = document.getElementById("chat-out");
+  out.textContent = "";
+  const model = (document.getElementById("chat-model") || {}).value || "";
+  try {
+    const res = await fetch("/v1/chat/completions", {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({
+        model,
+        stream: true,
+        messages: [{ role: "user", content: document.getElementById("chat-in").value }],
+      }),
+    });
+    const ctype = res.headers.get("content-type") || "";
+    if (!res.ok || !ctype.includes("event-stream")) {
+      const text = await res.text();
+      let data = {};
+      try { data = text ? JSON.parse(text) : {}; } catch { data = { error: text }; }
+      if (data.choices) {
+        out.textContent = (((data.choices || [])[0] || {}).message || {}).content || text;
+        return;
+      }
+      throw new Error(data.error || res.statusText || text);
+    }
+    const reader = res.body.getReader();
+    const dec = new TextDecoder();
+    let acc = "";
+    let buf = "";
+    while (true) {
+      const { value, done } = await reader.read();
+      if (done) break;
+      buf += dec.decode(value, { stream: true });
+      const parts = buf.split("\n");
+      buf = parts.pop();
+      for (const line of parts) {
+        const s = line.trim();
+        if (!s.startsWith("data:")) continue;
+        const payload = s.slice(5).trim();
+        if (payload === "[DONE]") continue;
+        try {
+          const j = JSON.parse(payload);
+          acc += (((j.choices || [])[0] || {}).delta || {}).content || "";
+          out.textContent = acc;
+        } catch { /* ignore keepalives */ }
+      }
+    }
+    if (!acc) out.textContent = out.textContent || "(empty)";
+  } catch (e) {
+    out.textContent = e.message;
+  }
+};
+
 rowsEl.addEventListener("click", async (ev) => {
   const btn = ev.target.closest("button[data-act]");
   if (!btn) return;
@@ -162,6 +337,17 @@ rowsEl.addEventListener("click", async (ev) => {
     if (act === "start") await api(`/api/backends/${id}/start`, { method: "POST", body: "{}" });
     if (act === "stop") await api(`/api/backends/${id}/stop`, { method: "POST", body: "{}" });
     if (act === "del") await api(`/api/backends/${id}`, { method: "DELETE" });
+    if (act === "connect") {
+      document.getElementById("connect-id").value = id;
+      document.getElementById("connect-model").value = btn.dataset.name || "";
+      document.getElementById("connect-err").textContent = "";
+      const saved = localStorage.getItem("cortex_deployer_gateway");
+      if (saved && !document.getElementById("connect-gw").value) {
+        document.getElementById("connect-gw").value = saved;
+      }
+      connectDlg.showModal();
+      return;
+    }
     if (act === "logs") {
       const data = await api(`/api/backends/${id}/logs`);
       document.getElementById("log-body").textContent = data.log || "(empty)";

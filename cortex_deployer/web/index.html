@@ -25,6 +25,9 @@
   <main>
     <section class="stats" id="stats"></section>
 
+    <p id="fitline" class="muted" style="margin:0 0 12px"></p>
+    <p id="binwarn" class="err" style="margin:0 0 12px"></p>
+
     <section class="panel">
       <div class="panel-head">
         <h2>Backends</h2>
@@ -48,6 +51,25 @@
         </table>
       </div>
     </section>
+
+    <section class="panel" style="margin-top:16px">
+      <div class="panel-head"><h2>Local weights</h2><span class="muted">~/.cortex-deployer/models</span></div>
+      <div id="local-models" class="muted" style="padding:12px">none yet</div>
+    </section>
+
+    <section class="panel" style="margin-top:16px">
+      <div class="panel-head"><h2>Chat</h2><span class="muted">POST /v1/chat/completions (stream)</span></div>
+      <div style="padding:12px">
+        <label>Model
+          <select id="chat-model"></select>
+        </label>
+        <textarea id="chat-in" rows="3" style="width:100%" placeholder="Ask the running model…"></textarea>
+        <div class="dlg-actions">
+          <button class="primary" id="chat-send">Send</button>
+        </div>
+        <pre id="chat-out"></pre>
+      </div>
+    </section>
   </main>
 
   <dialog id="deploy-dlg">
@@ -60,9 +82,14 @@
       <label>Served name
         <input id="served" placeholder="Qwen3.8-27B-Q4" />
       </label>
+      <p id="recipe-note" class="muted"></p>
       <label>Weights path (GGUF / HF dir)
         <input id="model-path" placeholder="C:\\models\\Qwen3.8-27B.gguf" />
       </label>
+      <div class="dlg-actions" style="justify-content:flex-start">
+        <button type="button" class="ghost" id="btn-dl">Download recipe weights</button>
+      </div>
+      <p id="dl-status" class="muted"></p>
       <label>Context length
         <input id="ctx" type="number" value="8192" />
       </label>
@@ -98,6 +125,28 @@
     <h3>Engine log</h3>
     <pre id="log-body"></pre>
     <button class="ghost" id="log-close">Close</button>
+  </dialog>
+
+  <dialog id="connect-dlg">
+    <form id="connect-form" method="dialog">
+      <h3>Announce to Cortex</h3>
+      <p class="muted">Outbound WebSocket. Token from the Cortex UI — never stored in git.</p>
+      <input type="hidden" id="connect-id" />
+      <label>Gateway
+        <input id="connect-gw" placeholder="wss://cortex.example.com/cortex/deployer/ws/register" />
+      </label>
+      <label>Token
+        <input id="connect-tok" type="password" autocomplete="off" />
+      </label>
+      <label>Catalog model id
+        <input id="connect-model" />
+      </label>
+      <div class="dlg-actions">
+        <button type="button" class="ghost" id="connect-cancel">Cancel</button>
+        <button type="submit" class="primary">Connect</button>
+      </div>
+      <p id="connect-err" class="err"></p>
+    </form>
   </dialog>
 
   <script src="/static/app.js"></script>

@@ -3,6 +3,8 @@ name: example-llamacpp-cuda
 engine: llamacpp
 executor: process
 quant: Q4_K_M
+min_vram_mb: 8000
+notes: Generic llama.cpp CUDA example.
 model:
   id: example-gguf
   served_name: example-gguf
