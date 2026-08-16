@@ -18,13 +18,28 @@ class InstallScriptStaticTests(unittest.TestCase):
         self.assertTrue(SCRIPT.is_file())
         text = SCRIPT.read_text(encoding="utf-8")
         self.assertTrue(text.startswith("#!/usr/bin/env bash\n"))
-        self.assertIn("externally-managed-environment", text)
+        self.assertIn("Host assumptions: curl (or wget) and tar", text)
         self.assertIn("cortex.shizuha.com/deployer/install.sh", text)
         self.assertNotIn("--break-system-packages", text)
         self.assertNotIn("pip3 install", text)
         self.assertIn('pip install --python', text)
         self.assertIn("UV_PYTHON_INSTALL_DIR", text)
         self.assertIn("UV_PYTHON_PREFERENCE=only-managed", text)
+        self.assertIn('info() { echo "cortex-deployer-install: $*" >&2; }', text)
+        self.assertNotIn('uv="$(ensure_uv)"', text)
+        self.assertNotIn("if have uv; then", text)
+
+    def test_help_and_logs_stay_off_stdout(self):
+        if not shutil.which("bash"):
+            self.skipTest("bash not available")
+        proc = subprocess.run(
+            ["bash", str(SCRIPT), "--help"],
+            check=True,
+            capture_output=True,
+            text=True,
+        )
+        self.assertEqual(proc.stdout, "")
+        self.assertIn("Usage:", proc.stderr)
 
     def test_bash_syntax(self):
         if not shutil.which("bash"):
@@ -69,12 +84,17 @@ class InstallScriptE2ETests(unittest.TestCase):
         env["HOME"] = str(home)
         env.pop("VIRTUAL_ENV", None)
         env.pop("PYTHONHOME", None)
-        subprocess.run(
+        # Prove we do not need a host uv/python on PATH.
+        env["PATH"] = "/usr/bin:/bin"
+        proc = subprocess.run(
             ["bash", str(SCRIPT)],
             check=True,
             env=env,
             cwd=str(home),
+            capture_output=True,
+            text=True,
         )
+        self.assertEqual(proc.stdout, "", proc.stderr)
         wrapper = bindir / "cortex-deployer"
         self.assertTrue(wrapper.is_file())
         self.assertTrue(wrapper.stat().st_mode & stat.S_IXUSR)
