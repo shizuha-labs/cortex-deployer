@@ -103,13 +103,17 @@ def _cmd_run(args: argparse.Namespace) -> int:
 
 def _cmd_server(args: argparse.Namespace) -> int:
     from .httpapi import serve
+    from .runtime import autostart_persisted
 
     host = args.host
     port = int(args.port)
     httpd = serve(host, port)
+    started = autostart_persisted()
     url = f"http://{host}:{port}/"
     print(f"Cortex Deployer UI  {url}")
     print("API                 /api/backends  /api/recommend  /api/downloads  /v1/models")
+    if started:
+        print(f"autostart           {len(started)} backend(s)")
     print("Ctrl+C to stop.")
     try:
         httpd.serve_forever()
