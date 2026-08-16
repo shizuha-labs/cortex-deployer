@@ -2,5 +2,5 @@
 
 from .spec import ENGINE_KINDS, Recipe
 
-__version__ = "0.3.0"
+__version__ = "0.3.1"
 __all__ = ["ENGINE_KINDS", "Recipe", "__version__"]

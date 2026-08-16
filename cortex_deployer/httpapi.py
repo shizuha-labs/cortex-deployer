@@ -15,7 +15,7 @@ from typing import Any
 from urllib.parse import urlparse
 from urllib.request import Request, urlopen
 
-from . import __version__, download, hostinfo, recommend, setup, store
+from . import __version__, catalog, download, hostinfo, recommend, setup, store
 from . import connect_ctl
 from .recipes import list_examples, load_recipe
 from .runtime import (
@@ -87,6 +87,8 @@ def handle(method: str, path: str, body: bytes) -> tuple[int, bytes, str]:
         return _json_bytes({"recipes": recipes})
     if method == "GET" and route == "/api/recommend":
         return _json_bytes(recommend.recommend())
+    if method == "GET" and route == "/api/catalog":
+        return _json_bytes(catalog.fetch_catalog())
     if method == "GET" and route == "/api/downloads":
         return _json_bytes({"jobs": download.list_jobs(), "local": download.list_local_models()})
     if method == "POST" and route == "/api/downloads":

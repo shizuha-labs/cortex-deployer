@@ -15,6 +15,7 @@ class ServerTests(unittest.TestCase):
     def setUp(self):
         self.tmp = tempfile.TemporaryDirectory()
         os.environ["CORTEX_DEPLOYER_HOME"] = self.tmp.name
+        os.environ["CORTEX_DEPLOYER_CATALOG_URL"] = "bundled"
         self.httpd = serve_in_thread("127.0.0.1", 0)
         self.port = self.httpd.server_address[1]
         self.base = f"http://127.0.0.1:{self.port}"
@@ -24,6 +25,7 @@ class ServerTests(unittest.TestCase):
         self.httpd.server_close()
         self.tmp.cleanup()
         os.environ.pop("CORTEX_DEPLOYER_HOME", None)
+        os.environ.pop("CORTEX_DEPLOYER_CATALOG_URL", None)
 
     def _json(self, method: str, path: str, payload=None):
         data = None if payload is None else json.dumps(payload).encode()
@@ -43,7 +45,7 @@ class ServerTests(unittest.TestCase):
         with urlopen(self.base + "/", timeout=5) as resp:
             html = resp.read().decode()
         self.assertIn("Cortex Deployer", html)
-        self.assertIn("Set up recommended Qwen", html)
+        self.assertIn("Choose a Qwen build", html)
 
     def test_host_and_recipes(self):
         _, host = self._json("GET", "/api/host")

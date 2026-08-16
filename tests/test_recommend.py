@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import os
 import unittest
 from unittest.mock import patch
 
@@ -7,6 +8,10 @@ from cortex_deployer.recommend import fit_label, recommend
 
 
 class RecommendTests(unittest.TestCase):
+    def setUp(self):
+        os.environ["CORTEX_DEPLOYER_CATALOG_URL"] = "bundled"
+        self.addCleanup(lambda: os.environ.pop("CORTEX_DEPLOYER_CATALOG_URL", None))
+
     def test_fit_labels(self):
         self.assertEqual(fit_label(14000, 16000, apple=False), "recommended")
         self.assertEqual(fit_label(22000, 16000, apple=False), "tight")
@@ -22,6 +27,8 @@ class RecommendTests(unittest.TestCase):
             out = recommend()
         self.assertEqual(out["vram_mb"], 16376)
         self.assertEqual(out["best"], "qwen38-27b-q3-llamacpp.yaml")
+        qwen = next(m for m in out["models"] if m["id"] == "qwen3.8-27b")
+        self.assertEqual(qwen["recommended_recipe"], "qwen38-27b-q3-llamacpp.yaml")
         fits = {r["file"]: r["fit"] for r in out["recipes"]}
         self.assertEqual(fits["qwen38-27b-q3-llamacpp.yaml"], "recommended")
         self.assertIn(fits["qwen38-27b-llamacpp.yaml"], {"tight", "skip"})

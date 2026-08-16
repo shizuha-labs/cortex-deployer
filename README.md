@@ -7,12 +7,12 @@ Windows, Linux, and macOS.
 ```bash
 pip install git+https://github.com/shizuha-labs/cortex-deployer.git
 cortex-deployer server
-# open http://127.0.0.1:7480  →  Set up recommended Qwen
+# open http://127.0.0.1:7480  →  Choose a Qwen build
 ```
 
 Or from a checkout: `python -m cortex_deployer server`.
 
-**Set up recommended Qwen** (or `cortex-deployer setup`) does the rest: GPU fit, official `llama-server` install, Unsloth GGUF download, start. No separate CUDA toolkit or hand-placed binary.
+**Choose a Qwen build** lists Q2 / Q3 / Q4 (and MLX on Apple) from the live catalog at [cortex.shizuha.com/deployer](https://cortex.shizuha.com/deployer), marks one as recommended from this GPU's VRAM, then installs official `llama-server` + that GGUF. `cortex-deployer setup --recipe …` is the headless path. No separate CUDA toolkit.
 
 ## What you get
 
@@ -41,14 +41,13 @@ py -3.12 -m pip install "git+https://github.com/shizuha-labs/cortex-deployer.git
 cortex-deployer server
 ```
 
-4. Open http://127.0.0.1:7480 and click **Set up recommended Qwen**.
+4. Open http://127.0.0.1:7480 and click **Choose a Qwen build**.
 
-That click:
+The picker shows every Qwen3.8-27B quant from [cortex.shizuha.com/deployer](https://cortex.shizuha.com/deployer). On a 16 GB 5080, **Q3 is recommended**, Q2 is the fallback, Q4 is marked won't-fit. Picking one:
 
-- reads VRAM and picks `qwen38-27b-q3-llamacpp.yaml` (Q2 if you later OOM)
-- downloads the latest official `llama.cpp` **Windows CUDA 13** zip plus matching CUDA runtime DLLs into `%USERPROFILE%\.cortex-deployer\engines\`
-- pulls `unsloth/Qwen3.8-27B-GGUF` `*UD-Q3_K_XL*`
-- starts `llama-server` and lists `Qwen3.8-27B-Q3` at `/v1/models`
+- downloads official `llama.cpp` **Windows CUDA 13** + matching CUDA DLLs
+- pulls that Unsloth GGUF
+- starts `llama-server` and lists the served name at `/v1/models`
 
 Chat in the same page, or point any OpenAI client at `http://127.0.0.1:7480/v1`. Headless: `cortex-deployer setup`.
 

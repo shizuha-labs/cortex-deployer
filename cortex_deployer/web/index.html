@@ -19,7 +19,7 @@
       <button id="btn-refresh" class="ghost">Refresh</button>
       <button id="btn-adopt" class="ghost">Register URL</button>
       <button id="btn-deploy" class="ghost">Deploy model</button>
-      <button id="btn-setup" class="primary">Set up recommended Qwen</button>
+      <button id="btn-setup" class="primary">Choose a Qwen build</button>
     </div>
   </header>
 
@@ -48,7 +48,7 @@
             </tr>
           </thead>
           <tbody id="rows">
-            <tr><td colspan="6" class="empty">No backends yet. Click <b>Set up recommended Qwen</b> — the app picks the quant, installs llama-server, downloads weights, and starts.</td></tr>
+            <tr><td colspan="6" class="empty">No backends yet. Click <b>Choose a Qwen build</b> — pick a quant for this GPU (one is recommended from live VRAM).</td></tr>
           </tbody>
         </table>
       </div>
@@ -73,6 +73,16 @@
       </div>
     </section>
   </main>
+
+  <dialog id="pick-dlg">
+    <h3>Qwen builds for this GPU</h3>
+    <p id="pick-live" class="muted"></p>
+    <div id="pick-rows"></div>
+    <p class="muted" style="margin-top:12px">Catalog: <a id="pick-cat" href="https://cortex.shizuha.com/deployer" target="_blank" rel="noreferrer">cortex.shizuha.com/deployer</a></p>
+    <div class="dlg-actions">
+      <button type="button" class="ghost" id="pick-cancel">Cancel</button>
+    </div>
+  </dialog>
 
   <dialog id="deploy-dlg">
     <form id="deploy-form" method="dialog">
