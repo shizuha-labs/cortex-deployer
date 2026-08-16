@@ -90,3 +90,51 @@ class RelayStreamTests(unittest.TestCase):
         self.assertEqual([m["kind"] for m in sent], ["response"])
         self.assertEqual(sent[0]["status"], 200)
         self.assertEqual(b64d(sent[0]["body_b64"]), b'{"id":"x"}')
+
+    def test_cancel_closes_upstream_stream(self):
+        closed = {"n": 0}
+
+        class SlowStream(FakeStream):
+            async def aiter_bytes(self):
+                yield b"data: a\n\n"
+                await asyncio.sleep(30)
+                yield b"data: b\n\n"
+
+            async def __aexit__(self, *exc):
+                closed["n"] += 1
+                return False
+
+        sent = []
+
+        async def send(obj):
+            sent.append(obj)
+
+        body = json.dumps({"stream": True, "model": "example"}).encode()
+        fake = SlowStream([b"data: a\n\n"])
+
+        async def run():
+            task = asyncio.create_task(
+                dc.relay_request(
+                    FakeClient(fake),
+                    "http://127.0.0.1:8014/v1",
+                    {
+                        "id": "rid-cancel",
+                        "method": "POST",
+                        "path": "/chat/completions",
+                        "headers": {},
+                        "body_b64": b64e(body),
+                    },
+                    send,
+                )
+            )
+            for _ in range(50):
+                if sent:
+                    break
+                await asyncio.sleep(0.01)
+            task.cancel()
+            with self.assertRaises(asyncio.CancelledError):
+                await task
+
+        asyncio.run(run())
+        self.assertEqual(closed["n"], 1)
+        self.assertEqual(sent[0]["kind"], "start")
