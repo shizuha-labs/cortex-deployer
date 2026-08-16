@@ -159,10 +159,14 @@ HELP
   "$UV" python install "$PY_VERSION"
 
   info "venv ${PREFIX}/venv"
-  "$UV" venv "${PREFIX}/venv" --python "$PY_VERSION" --clear
+  if [ -x "${PREFIX}/venv/bin/python" ]; then
+    info "existing venv — upgrade in place (models stay)"
+  else
+    "$UV" venv "${PREFIX}/venv" --python "$PY_VERSION"
+  fi
 
   info "install cortex-deployer into the venv"
-  "$UV" pip install --python "${PREFIX}/venv/bin/python" "$TARBALL"
+  "$UV" pip install --python "${PREFIX}/venv/bin/python" --upgrade "$TARBALL"
 
   [ -x "${PREFIX}/venv/bin/cortex-deployer" ] \
     || die "venv is missing cortex-deployer after install"
@@ -185,8 +189,10 @@ HELP
   echo >&2
   echo "NVIDIA driver is the only extra host package for GPU. The app" >&2
   echo "fetches official llama.cpp builds and the GGUF itself." >&2
-  echo "Re-run this installer to upgrade. Models in ${PREFIX}/models stay." >&2
-  echo "If cortex-deployer server is running, stop it and start it again." >&2
+  echo "Later upgrades (no reinstall):  cortex-deployer update" >&2
+  echo "                                curl -fsSL https://cortex.shizuha.com/deployer/update.sh | bash" >&2
+  echo "Auto on start:                  cortex-deployer auto-update" >&2
+  echo "Models in ${PREFIX}/models stay." >&2
 
   if [ "$start" -eq 1 ]; then
     exec "${BIN_DIR}/cortex-deployer" server
