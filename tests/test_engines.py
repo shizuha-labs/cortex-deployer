@@ -72,3 +72,27 @@ class EngineTests(unittest.TestCase):
         )
         launch = render_process(recipe)
         self.assertEqual(launch.argv[:3], ("rapid-mlx", "serve", "/models/m"))
+
+    def test_mlx_extra_args_keep_mtp_flags(self):
+        recipe = _recipe(
+            engine="mlx",
+            model={
+                "id": "qwen3.8-27b",
+                "served_name": "qwen3.8-27b",
+                "source": {"kind": "local_path", "path": "/models/Qwen3.8-27B-8bit"},
+            },
+            launch={
+                "host": "127.0.0.1",
+                "port": 8014,
+                "extra_args": [
+                    "--hybrid-cache-entries",
+                    "8",
+                    "--force-spec-decode",
+                    "--pin-system-prompt",
+                ],
+            },
+        )
+        launch = render_process(recipe)
+        self.assertIn("--hybrid-cache-entries", launch.argv)
+        self.assertIn("8", launch.argv)
+        self.assertIn("--pin-system-prompt", launch.argv)

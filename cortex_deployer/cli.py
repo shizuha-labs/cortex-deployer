@@ -4,11 +4,15 @@ from __future__ import annotations
 
 import argparse
 import json
+import os
+import subprocess
+import sys
 
 from . import __version__
 from .client import add_connect_arguments, run_connect
 from .engines import render_process
 from .recipes import list_examples, load_recipe
+from .runtime import resolve_binary
 from .spec import ENGINE_KINDS
 
 
@@ -77,6 +81,26 @@ def _cmd_download(args: argparse.Namespace) -> int:
     return 1
 
 
+def _cmd_run(args: argparse.Namespace) -> int:
+    """Render a recipe and exec the engine in the foreground (launchd/systemd)."""
+    recipe = load_recipe(args.recipe)
+    launch = render_process(recipe)
+    argv = list(launch.argv)
+    argv[0] = resolve_binary(recipe.engine, argv[0])
+    env = os.environ.copy()
+    env.update({str(k): str(v) for k, v in launch.env})
+    if args.dry_run:
+        print(" ".join(argv))
+        return 0
+    if os.name == "nt":
+        return int(subprocess.call(argv, env=env))
+    try:
+        os.execvpe(argv[0], argv, env)
+    except OSError as exc:
+        print(f"failed to exec {argv[0]}: {exc}", file=sys.stderr)
+        return 1
+    return 0
+
 def _cmd_server(args: argparse.Namespace) -> int:
     from .httpapi import serve
 
@@ -116,6 +140,17 @@ def build_parser() -> argparse.ArgumentParser:
     render.add_argument("recipe")
     render.add_argument("--json", action="store_true")
 
+    run = sub.add_parser(
+        "run",
+        help="exec a recipe in the foreground (launchd/systemd KeepAlive)",
+    )
+    run.add_argument("recipe")
+    run.add_argument(
+        "--dry-run",
+        action="store_true",
+        help="print resolved argv and exit",
+    )
+
     connect = sub.add_parser(
         "connect",
         help="dial out to a Cortex deployer gateway and relay /v1",
@@ -153,6 +188,7 @@ def main(argv: list[str] | None = None) -> None:
         "engines": _cmd_engines,
         "recipes": _cmd_recipes,
         "render": _cmd_render,
+        "run": _cmd_run,
         "connect": _cmd_connect,
         "recommend": _cmd_recommend,
         "download": _cmd_download,
