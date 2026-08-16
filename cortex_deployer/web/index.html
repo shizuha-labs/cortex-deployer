@@ -1,0 +1,105 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Cortex Deployer</title>
+  <link rel="stylesheet" href="/static/styles.css" />
+</head>
+<body>
+  <header class="top">
+    <div class="brand">
+      <span class="mark"></span>
+      <div>
+        <h1>Cortex Deployer</h1>
+        <p id="hostline">starting…</p>
+      </div>
+    </div>
+    <div class="top-actions">
+      <button id="btn-refresh" class="ghost">Refresh</button>
+      <button id="btn-adopt" class="ghost">Register URL</button>
+      <button id="btn-deploy" class="primary">Deploy model</button>
+    </div>
+  </header>
+
+  <main>
+    <section class="stats" id="stats"></section>
+
+    <section class="panel">
+      <div class="panel-head">
+        <h2>Backends</h2>
+        <span id="count" class="muted"></span>
+      </div>
+      <div class="table-wrap">
+        <table>
+          <thead>
+            <tr>
+              <th>Model</th>
+              <th>Engine</th>
+              <th>State</th>
+              <th>Endpoint</th>
+              <th>Context</th>
+              <th></th>
+            </tr>
+          </thead>
+          <tbody id="rows">
+            <tr><td colspan="6" class="empty">No backends yet. Deploy a model or register an existing OpenAI URL.</td></tr>
+          </tbody>
+        </table>
+      </div>
+    </section>
+  </main>
+
+  <dialog id="deploy-dlg">
+    <form id="deploy-form" method="dialog">
+      <h3>Deploy model</h3>
+      <p class="muted">Starts a local engine (llama.cpp / vLLM / SGLang / MLX) and lists it here. Same idea as Cortex Backends — this box is yours.</p>
+      <label>Recipe
+        <select id="recipe"></select>
+      </label>
+      <label>Served name
+        <input id="served" placeholder="Qwen3.8-27B-Q4" />
+      </label>
+      <label>Weights path (GGUF / HF dir)
+        <input id="model-path" placeholder="C:\\models\\Qwen3.8-27B.gguf" />
+      </label>
+      <label>Context length
+        <input id="ctx" type="number" value="8192" />
+      </label>
+      <label>Port (blank = auto)
+        <input id="port" type="number" />
+      </label>
+      <div class="dlg-actions">
+        <button type="button" class="ghost" id="deploy-cancel">Cancel</button>
+        <button type="submit" class="primary">Start</button>
+      </div>
+      <p id="deploy-err" class="err"></p>
+    </form>
+  </dialog>
+
+  <dialog id="adopt-dlg">
+    <form id="adopt-form" method="dialog">
+      <h3>Register existing server</h3>
+      <label>Model id
+        <input id="adopt-name" placeholder="Qwen3.8-27B-Q4" required />
+      </label>
+      <label>Base URL
+        <input id="adopt-url" placeholder="http://127.0.0.1:8080/v1" required />
+      </label>
+      <div class="dlg-actions">
+        <button type="button" class="ghost" id="adopt-cancel">Cancel</button>
+        <button type="submit" class="primary">Register</button>
+      </div>
+      <p id="adopt-err" class="err"></p>
+    </form>
+  </dialog>
+
+  <dialog id="log-dlg">
+    <h3>Engine log</h3>
+    <pre id="log-body"></pre>
+    <button class="ghost" id="log-close">Close</button>
+  </dialog>
+
+  <script src="/static/app.js"></script>
+</body>
+</html>

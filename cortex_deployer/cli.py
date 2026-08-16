@@ -51,6 +51,25 @@ def _cmd_connect(args: argparse.Namespace) -> int:
     return 0
 
 
+def _cmd_server(args: argparse.Namespace) -> int:
+    from .httpapi import serve
+
+    host = args.host
+    port = int(args.port)
+    httpd = serve(host, port)
+    url = f"http://{host}:{port}/"
+    print(f"Cortex Deployer UI  {url}")
+    print("API                 /api/backends  /api/host  /v1/models")
+    print("Ctrl+C to stop.")
+    try:
+        httpd.serve_forever()
+    except KeyboardInterrupt:
+        print("\nstopped")
+    finally:
+        httpd.server_close()
+    return 0
+
+
 def _cmd_version(_args: argparse.Namespace) -> int:
     print(__version__)
     return 0
@@ -76,6 +95,14 @@ def build_parser() -> argparse.ArgumentParser:
         help="dial out to a Cortex deployer gateway and relay /v1",
     )
     add_connect_arguments(connect)
+
+    server = sub.add_parser(
+        "server",
+        aliases=["up", "web"],
+        help="start the local control-plane UI (DeepSeek Harness-style)",
+    )
+    server.add_argument("--host", default="127.0.0.1")
+    server.add_argument("--port", type=int, default=7480)
     return parser
 
 
@@ -93,6 +120,9 @@ def main(argv: list[str] | None = None) -> None:
         "recipes": _cmd_recipes,
         "render": _cmd_render,
         "connect": _cmd_connect,
+        "server": _cmd_server,
+        "up": _cmd_server,
+        "web": _cmd_server,
         "version": _cmd_version,
     }
     raise SystemExit(handlers[args.command](args))
