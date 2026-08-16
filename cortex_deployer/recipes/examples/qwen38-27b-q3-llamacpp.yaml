@@ -1,14 +1,14 @@
 schema_version: deployer.recipe.v1
-name: qwen38-27b-llamacpp
+name: qwen38-27b-q3-llamacpp
 engine: llamacpp
 executor: process
-quant: UD-Q4_K_XL
-min_vram_mb: 22000
-notes: UD-Q4_K_XL is ~17.9 GB plus KV — needs a 24 GB class card. A 16 GB 5080 should use the Q3 recipe.
-download_glob: "*UD-Q4_K_XL.gguf"
+quant: UD-Q3_K_XL
+min_vram_mb: 14000
+notes: First choice for 16 GB Blackwell (RTX 5080). UD-Q3_K_XL is ~13.4 GB; Q4 will not fit.
+download_glob: "*UD-Q3_K_XL.gguf"
 model:
-  id: Qwen3.8-27B-Q4
-  served_name: Qwen3.8-27B-Q4
+  id: Qwen3.8-27B-Q3
+  served_name: Qwen3.8-27B-Q3
   source:
     kind: huggingface
     repo: unsloth/Qwen3.8-27B-GGUF
@@ -22,5 +22,5 @@ launch:
     - "99"
 connect:
   aliases:
-    - Qwen3.8-27B-Q4
+    - Qwen3.8-27B-Q3
   max_concurrent: 1

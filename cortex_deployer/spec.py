@@ -49,6 +49,9 @@ class Recipe:
     launch: LaunchSpec = field(default_factory=LaunchSpec)
     connect: ConnectSpec = field(default_factory=ConnectSpec)
     quant: str = ""
+    min_vram_mb: int = 0
+    notes: str = ""
+    download_glob: str = ""
 
     def upstream_url(self) -> str:
         return f"http://{self.launch.host}:{int(self.launch.port)}/v1"
@@ -136,4 +139,7 @@ def recipe_from_dict(data: dict[str, Any]) -> Recipe:
             gateway=str(connect_raw.get("gateway") or ""),
         ),
         quant=str(data.get("quant") or ""),
+        min_vram_mb=int(data.get("min_vram_mb") or 0),
+        notes=str(data.get("notes") or ""),
+        download_glob=str(data.get("download_glob") or source.get("glob") or ""),
     )

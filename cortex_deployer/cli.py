@@ -51,6 +51,32 @@ def _cmd_connect(args: argparse.Namespace) -> int:
     return 0
 
 
+def _cmd_recommend(args: argparse.Namespace) -> int:
+    from .recommend import recommend
+
+    out = recommend()
+    if args.json:
+        print(json.dumps(out, indent=2))
+        return 0
+    print(f"best={out.get('best') or 'none'} vram_mb={out.get('vram_mb')} apple={out.get('apple')}")
+    for row in out.get("recipes") or []:
+        print(f"{row.get('fit', '?'):12} {row.get('file')}")
+    return 0
+
+
+def _cmd_download(args: argparse.Namespace) -> int:
+    from .download import start_download, wait_job
+
+    job = start_download(args.repo, filename=args.filename or "", glob=args.glob or "")
+    print(f"download {job['id']} starting", flush=True)
+    done = wait_job(job["id"])
+    if done.get("state") == "done":
+        print(done.get("path") or "done")
+        return 0
+    print(done.get("error") or "download failed", flush=True)
+    return 1
+
+
 def _cmd_server(args: argparse.Namespace) -> int:
     from .httpapi import serve
 
@@ -59,7 +85,7 @@ def _cmd_server(args: argparse.Namespace) -> int:
     httpd = serve(host, port)
     url = f"http://{host}:{port}/"
     print(f"Cortex Deployer UI  {url}")
-    print("API                 /api/backends  /api/host  /v1/models")
+    print("API                 /api/backends  /api/recommend  /api/downloads  /v1/models")
     print("Ctrl+C to stop.")
     try:
         httpd.serve_forever()
@@ -96,6 +122,14 @@ def build_parser() -> argparse.ArgumentParser:
     )
     add_connect_arguments(connect)
 
+    rec = sub.add_parser("recommend", help="rank bundled recipes against detected VRAM")
+    rec.add_argument("--json", action="store_true")
+
+    dl = sub.add_parser("download", help="download Hugging Face GGUF weights")
+    dl.add_argument("--repo", required=True, help="org/name")
+    dl.add_argument("--filename", default="", help="single file under the repo")
+    dl.add_argument("--glob", default="", help="fnmatch, e.g. *UD-Q3_K_XL.gguf")
+
     server = sub.add_parser(
         "server",
         aliases=["up", "web"],
@@ -120,6 +154,8 @@ def main(argv: list[str] | None = None) -> None:
         "recipes": _cmd_recipes,
         "render": _cmd_render,
         "connect": _cmd_connect,
+        "recommend": _cmd_recommend,
+        "download": _cmd_download,
         "server": _cmd_server,
         "up": _cmd_server,
         "web": _cmd_server,

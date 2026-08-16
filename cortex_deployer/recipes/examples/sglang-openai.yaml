@@ -2,6 +2,8 @@ schema_version: deployer.recipe.v1
 name: example-sglang
 engine: sglang
 executor: process
+min_vram_mb: 16000
+notes: Single-node SGLang only. Multi-node flags fail closed.
 model:
   id: example-sglang
   served_name: example-sglang
