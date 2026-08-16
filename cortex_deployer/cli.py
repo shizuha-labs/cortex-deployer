@@ -121,8 +121,12 @@ def _cmd_server(args: argparse.Namespace) -> int:
     host = args.host
     port = int(args.port)
     httpd = serve(host, port)
+    bound_host, bound_port = httpd.server_address[:2]
     started = autostart_persisted()
-    url = f"http://{host}:{port}/"
+    shown = "127.0.0.1" if bound_host in {"0.0.0.0", "::", ""} else bound_host
+    url = f"http://{shown}:{bound_port}/"
+    if bound_port != port:
+        print(f"port {port} unavailable; listening on {bound_port}", flush=True)
     print(f"Cortex Deployer UI  {url}")
     print("API                 /api/backends  /api/recommend  /api/setup  /api/downloads  /v1/models")
     if started:
@@ -194,7 +198,12 @@ def build_parser() -> argparse.ArgumentParser:
         help="start the local control-plane UI (DeepSeek Harness-style)",
     )
     server.add_argument("--host", default="127.0.0.1")
-    server.add_argument("--port", type=int, default=7480)
+    server.add_argument(
+        "--port",
+        type=int,
+        default=7480,
+        help="preferred listen port (>=1024); if busy or forbidden, the next free high port is used",
+    )
     return parser
 
 
