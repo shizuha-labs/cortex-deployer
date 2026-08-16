@@ -206,6 +206,9 @@ def parse_connect_args(argv: list[str] | None = None) -> argparse.Namespace:
     return parser.parse_args(argv)
 
 
+parse_args = parse_connect_args
+
+
 def run_connect(args: argparse.Namespace) -> None:
     if not args.gateway:
         raise SystemExit("connect requires --gateway or CORTEX_DEPLOYER_GATEWAY")
