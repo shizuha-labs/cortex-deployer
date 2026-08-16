@@ -5,6 +5,7 @@ from __future__ import annotations
 import os
 import platform
 import shutil
+import socket
 import subprocess
 from pathlib import Path
 from typing import Any
@@ -125,6 +126,63 @@ def detect_binaries() -> dict[str, str | None]:
     }
 
 
+def is_wsl() -> bool:
+    if os.environ.get("WSL_DISTRO_NAME"):
+        return True
+    try:
+        text = Path("/proc/sys/kernel/osrelease").read_text(encoding="utf-8").lower()
+    except OSError:
+        try:
+            text = Path("/proc/version").read_text(encoding="utf-8").lower()
+        except OSError:
+            return False
+    return "microsoft" in text or "wsl" in text
+
+
+def default_bind_host() -> str:
+    """Linux/WSL listen on all interfaces so the distro IP is reachable.
+
+    Native Windows stays loopback (the usual local UI). Override with --host.
+    """
+    if os.name == "nt":
+        return "127.0.0.1"
+    return "0.0.0.0"
+
+
+def ipv4_addrs() -> list[str]:
+    found: list[str] = []
+
+    def add(ip: str) -> None:
+        if not ip or ip.startswith("127.") or ip.startswith("169.254.") or ip in found:
+            return
+        found.append(ip)
+
+    try:
+        probe = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
+        probe.connect(("8.8.8.8", 80))
+        add(probe.getsockname()[0])
+        probe.close()
+    except OSError:
+        pass
+    try:
+        for info in socket.getaddrinfo(socket.gethostname(), None, socket.AF_INET):
+            add(info[4][0])
+    except OSError:
+        pass
+    return found
+
+
+def advertise_urls(host: str, port: int) -> list[str]:
+    port = int(port)
+    if host not in {"0.0.0.0", "::", ""}:
+        shown = "127.0.0.1" if host in {"::1"} else host
+        return [f"http://{shown}:{port}/"]
+    urls = [f"http://127.0.0.1:{port}/"]
+    for ip in ipv4_addrs():
+        urls.append(f"http://{ip}:{port}/")
+    return urls
+
+
 def snapshot() -> dict[str, Any]:
     return {
         "os": platform.system(),
@@ -132,6 +190,8 @@ def snapshot() -> dict[str, Any]:
         "arch": platform.machine(),
         "python": platform.python_version(),
         "hostname": platform.node(),
+        "wsl": is_wsl(),
+        "ipv4": ipv4_addrs(),
         "gpus": detect_gpus(),
         "binaries": detect_binaries(),
         "home": str(os.path.expanduser("~")),

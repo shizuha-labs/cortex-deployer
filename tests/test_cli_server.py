@@ -13,6 +13,13 @@ class CliServerTests(unittest.TestCase):
         args = parser.parse_args(["server", "--port", "9"])
         self.assertEqual(args.command, "server")
         self.assertEqual(args.port, 9)
+        import os
+
+        from cortex_deployer.hostinfo import default_bind_host
+
+        self.assertEqual(args.host, default_bind_host())
+        if os.name != "nt":
+            self.assertEqual(args.host, "0.0.0.0")
         args = parser.parse_args(["up"])
         self.assertIn(args.command, {"up", "server"})
 
