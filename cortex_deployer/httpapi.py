@@ -6,7 +6,6 @@ JSON API for backends, plus an OpenAI-compatible /v1 that fans out to them.
 
 from __future__ import annotations
 
-import errno
 import json
 import os
 import posixpath
@@ -28,6 +27,11 @@ from .runtime import (
     start_backend,
     stop_backend,
     tail_log,
+)
+from .ports import (
+    MIN_UNPRIVILEGED as _MIN_UNPRIVILEGED,
+    bind_unavailable as _bind_unavailable,
+    candidate_ports,
 )
 from .spec import ENGINE_KINDS
 
@@ -406,50 +410,6 @@ class Handler(BaseHTTPRequestHandler):
                 self.wfile.flush()
         finally:
             resp.close()
-
-
-# Windows Hyper-V/NAT often excludes mid-range ports (WinError 10013) even
-# when they are unprivileged. Never bind <1024; walk nearby then jump.
-_MIN_UNPRIVILEGED = 1024
-_NEARBY = 32
-_JUMPS = (18765, 17890, 19080, 23456, 28080, 34567, 45678)
-
-
-def _bind_unavailable(exc: BaseException) -> bool:
-    if not isinstance(exc, OSError):
-        return False
-    winerr = getattr(exc, "winerror", None)
-    if winerr in {10013, 10048, 10049}:
-        return True
-    return exc.errno in {
-        errno.EADDRINUSE,
-        errno.EACCES,
-        errno.EADDRNOTAVAIL,
-        getattr(errno, "WSAEACCES", 10013),
-        getattr(errno, "WSAEADDRINUSE", 10048),
-    }
-
-
-def candidate_ports(preferred: int) -> list[int]:
-    """Unprivileged ports to try, then 0 so the OS assigns one."""
-    seen: set[int] = set()
-    out: list[int] = []
-
-    def add(port: int) -> None:
-        if port < _MIN_UNPRIVILEGED or port > 65535 or port in seen:
-            return
-        seen.add(port)
-        out.append(port)
-
-    start = preferred if preferred >= _MIN_UNPRIVILEGED else 18765
-    add(start)
-    for delta in range(1, _NEARBY + 1):
-        add(start + delta)
-    for jump in _JUMPS:
-        for delta in range(0, 8):
-            add(jump + delta)
-    out.append(0)
-    return out
 
 
 def serve(host: str = "127.0.0.1", port: int = 7480) -> ThreadingHTTPServer:

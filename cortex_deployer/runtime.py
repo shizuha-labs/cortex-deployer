@@ -5,7 +5,6 @@ from __future__ import annotations
 import os
 import shutil
 import signal
-import socket
 import subprocess
 import time
 from pathlib import Path
@@ -15,6 +14,13 @@ from urllib.request import urlopen
 
 from .engines import render_process
 from .paths import logs_dir
+from .ports import (
+    argv_port,
+    bind_error_in_log,
+    pick_free_port,
+    set_argv_port,
+    summarize_crash,
+)
 from .recipes import list_examples, load_recipe
 from .spec import recipe_from_dict
 from . import store
@@ -85,12 +91,13 @@ def reconcile() -> list[dict[str, Any]]:
     return out
 
 
-def pick_port(preferred: int | None = None) -> int:
-    if preferred:
-        return int(preferred)
-    with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as sock:
-        sock.bind(("127.0.0.1", 0))
-        return int(sock.getsockname()[1])
+def pick_port(preferred: int | None = None, host: str = "127.0.0.1") -> int:
+    """Preferred port if it binds, else the next free unprivileged port.
+
+    Recipes default to 8080. On Windows that port is often excluded (Hyper-V)
+    or taken — llama-server then exits with "couldn't bind HTTP server socket".
+    """
+    return pick_free_port(int(preferred or 0), host=host)
 
 
 def resolve_binary(engine: str, override: str = "") -> str:
@@ -125,6 +132,26 @@ def resolve_binary(engine: str, override: str = "") -> str:
     return candidates[0] if candidates else engine
 
 
+def _spawn(argv: list[str], env: dict[str, str], log_path: Path) -> subprocess.Popen[Any]:
+    log_f = open(log_path, "ab", buffering=0)
+    popen_kw: dict[str, Any] = {
+        "args": argv,
+        "stdout": log_f,
+        "stderr": subprocess.STDOUT,
+        "stdin": subprocess.DEVNULL,
+        "env": env,
+    }
+    if os.name == "nt":
+        popen_kw["creationflags"] = getattr(subprocess, "CREATE_NEW_PROCESS_GROUP", 0)
+    else:
+        popen_kw["start_new_session"] = True
+    try:
+        return subprocess.Popen(**popen_kw)
+    except OSError as exc:
+        log_f.close()
+        raise ValueError(f"failed to spawn {argv[0]}: {exc}") from exc
+
+
 def start_backend(backend_id: str) -> dict[str, Any]:
     backend = store.get_backend(backend_id)
     if backend is None:
@@ -141,41 +168,77 @@ def start_backend(backend_id: str) -> dict[str, Any]:
     if not argv:
         raise ValueError("backend has no argv to start")
     argv[0] = resolve_binary(backend.get("engine") or "llamacpp", argv[0])
+    host = str(backend.get("host") or "127.0.0.1")
+    preferred = argv_port(argv) or int(backend.get("port") or 0)
     log_path = Path(backend.get("log_path") or (logs_dir() / f"{backend_id}.log"))
     log_path.parent.mkdir(parents=True, exist_ok=True)
-    log_f = open(log_path, "ab", buffering=0)
-    flags = 0
-    popen_kw: dict[str, Any] = {
-        "args": argv,
-        "stdout": log_f,
-        "stderr": subprocess.STDOUT,
-        "stdin": subprocess.DEVNULL,
-    }
     env = os.environ.copy()
     env.update({str(k): str(v) for k, v in (backend.get("env") or {}).items()})
     bin_dir = str(Path(argv[0]).resolve().parent)
     if bin_dir and bin_dir not in {".", ""}:
         env["PATH"] = bin_dir + os.pathsep + env.get("PATH", "")
-    popen_kw["env"] = env
-    if os.name == "nt":
-        flags |= getattr(subprocess, "CREATE_NEW_PROCESS_GROUP", 0)
-        popen_kw["creationflags"] = flags
-    else:
-        popen_kw["start_new_session"] = True
-    try:
-        proc = subprocess.Popen(**popen_kw)
-    except OSError as exc:
-        log_f.close()
-        raise ValueError(f"failed to spawn {argv[0]}: {exc}") from exc
-    updated = store.update_backend(
-        backend_id,
-        state="starting",
-        pid=proc.pid,
-        log_path=str(log_path),
-        argv=argv,
-        healthy=False,
-    )
-    return updated or backend
+
+    last_log = ""
+    skip: set[int] = set()
+    want = preferred
+    for _attempt in range(6):
+        port = pick_port(want, host=host)
+        if port in skip:
+            port = pick_port(port + 1, host=host)
+        skip.add(port)
+        argv = set_argv_port(argv, port)
+        before = log_path.stat().st_size if log_path.exists() else 0
+        proc = _spawn(argv, env, log_path)
+        store.update_backend(
+            backend_id,
+            state="starting",
+            pid=proc.pid,
+            log_path=str(log_path),
+            argv=argv,
+            host=host,
+            port=port,
+            base_url=f"http://{host}:{port}/v1",
+            healthy=False,
+        )
+        died = False
+        for _ in range(12):
+            time.sleep(0.1)
+            if proc.poll() is not None:
+                died = True
+                break
+        if not died:
+            updated = store.get_backend(backend_id)
+            return updated or backend
+        try:
+            raw = log_path.read_bytes()[before:]
+            last_log = raw.decode("utf-8", errors="replace")
+        except OSError:
+            last_log = tail_log(backend_id)
+        if not bind_error_in_log(last_log):
+            store.update_backend(backend_id, state="stopped", pid=None, healthy=False)
+            raise ValueError(summarize_crash(last_log))
+        want = port + 1
+    store.update_backend(backend_id, state="stopped", pid=None, healthy=False)
+    raise ValueError(summarize_crash(last_log or "couldn't bind HTTP server socket"))
+
+
+def wait_started(backend_id: str, timeout: float = 8.0) -> dict[str, Any]:
+    """Fail fast if the engine dies on bind; do not wait out a long GGUF load."""
+    deadline = time.time() + timeout
+    last = store.get_backend(backend_id)
+    if last is None:
+        raise KeyError(backend_id)
+    while time.time() < deadline:
+        last = store.get_backend(backend_id) or last
+        pid = last.get("pid")
+        if last.get("kind") == "adopt":
+            return last
+        if pid and not _pid_alive(int(pid)):
+            raise ValueError(summarize_crash(tail_log(backend_id)))
+        if _probe(str(last.get("base_url") or "")):
+            return store.update_backend(backend_id, state="running", healthy=True) or last
+        time.sleep(0.2)
+    return last
 
 
 def stop_backend(backend_id: str) -> dict[str, Any]:
@@ -248,7 +311,11 @@ def deploy_from_spec(spec: dict[str, Any]) -> dict[str, Any]:
 
     recipe = _load_recipe_arg(spec)
 
-    port = pick_port(spec.get("port") or recipe.launch.port)
+    host = str(spec.get("host") or recipe.launch.host or "127.0.0.1")
+    preferred = spec.get("port")
+    if preferred in (None, ""):
+        preferred = recipe.launch.port
+    port = pick_port(int(preferred or 0), host=host)
     model_path = str(spec.get("model_path") or recipe.model.path or "").strip()
     if recipe.engine == "llamacpp" and not model_path:
         raise ValueError(
@@ -274,7 +341,7 @@ def deploy_from_spec(spec: dict[str, Any]) -> dict[str, Any]:
             },
         },
         "launch": {
-            "host": spec.get("host") or recipe.launch.host,
+            "host": host,
             "port": port,
             "context_length": spec.get("context_length") or recipe.launch.context_length,
             "extra_args": list(spec.get("extra_args") or recipe.launch.extra_args),
