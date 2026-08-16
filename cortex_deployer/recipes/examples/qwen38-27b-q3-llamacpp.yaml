@@ -16,7 +16,7 @@ model:
 launch:
   host: 127.0.0.1
   port: 8080
-  context_length: 8192
+  context_length: 16384
   extra_args:
     - --n-gpu-layers
     - "99"

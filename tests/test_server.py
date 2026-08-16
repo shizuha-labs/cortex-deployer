@@ -43,7 +43,7 @@ class ServerTests(unittest.TestCase):
         with urlopen(self.base + "/", timeout=5) as resp:
             html = resp.read().decode()
         self.assertIn("Cortex Deployer", html)
-        self.assertIn("Deploy model", html)
+        self.assertIn("Set up recommended Qwen", html)
 
     def test_host_and_recipes(self):
         _, host = self._json("GET", "/api/host")
@@ -76,6 +76,11 @@ class ServerTests(unittest.TestCase):
     def test_v1_models_empty(self):
         _, body = self._json("GET", "/v1/models")
         self.assertEqual(body["data"], [])
+
+    def test_setup_unknown_recipe(self):
+        status, err = self._json("POST", "/api/setup", {"recipe": "nope.yaml"})
+        self.assertEqual(status, 400)
+        self.assertIn("unknown recipe", err["error"])
 
     def test_recommend_and_connect_requires_token(self):
         _, rec = self._json("GET", "/api/recommend")

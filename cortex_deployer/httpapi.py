@@ -15,7 +15,7 @@ from typing import Any
 from urllib.parse import urlparse
 from urllib.request import Request, urlopen
 
-from . import __version__, download, hostinfo, recommend, store
+from . import __version__, download, hostinfo, recommend, setup, store
 from . import connect_ctl
 from .recipes import list_examples, load_recipe
 from .runtime import (
@@ -109,6 +109,22 @@ def handle(method: str, path: str, body: bytes) -> tuple[int, bytes, str]:
         return _json_bytes(job)
     if method == "GET" and route == "/api/local-models":
         return _json_bytes({"models": download.list_local_models()})
+    if method == "GET" and route == "/api/setup":
+        return _json_bytes({"jobs": setup.list_jobs()})
+    if method == "POST" and route == "/api/setup":
+        if payload and not isinstance(payload, dict):
+            return _json_bytes({"error": "object required"}, 400)
+        try:
+            job = setup.start_setup(str((payload or {}).get("recipe") or ""))
+        except ValueError as exc:
+            return _json_bytes({"error": str(exc)}, 400)
+        return _json_bytes(job, 202)
+    if method == "GET" and route.startswith("/api/setup/"):
+        job_id = route.rsplit("/", 1)[-1]
+        job = setup.get_job(job_id)
+        if job is None:
+            return _json_bytes({"error": "not found"}, 404)
+        return _json_bytes(job)
     if method == "GET" and route == "/api/backends":
         return _json_bytes({"backends": reconcile()})
     if method == "POST" and route == "/api/backends":

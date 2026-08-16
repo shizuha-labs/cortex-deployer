@@ -18,7 +18,8 @@
     <div class="top-actions">
       <button id="btn-refresh" class="ghost">Refresh</button>
       <button id="btn-adopt" class="ghost">Register URL</button>
-      <button id="btn-deploy" class="primary">Deploy model</button>
+      <button id="btn-deploy" class="ghost">Deploy model</button>
+      <button id="btn-setup" class="primary">Set up recommended Qwen</button>
     </div>
   </header>
 
@@ -27,6 +28,7 @@
 
     <p id="fitline" class="muted" style="margin:0 0 12px"></p>
     <p id="binwarn" class="err" style="margin:0 0 12px"></p>
+    <p id="setup-status" class="muted" style="margin:0 0 12px"></p>
 
     <section class="panel">
       <div class="panel-head">
@@ -46,7 +48,7 @@
             </tr>
           </thead>
           <tbody id="rows">
-            <tr><td colspan="6" class="empty">No backends yet. Deploy a model or register an existing OpenAI URL.</td></tr>
+            <tr><td colspan="6" class="empty">No backends yet. Click <b>Set up recommended Qwen</b> — the app picks the quant, installs llama-server, downloads weights, and starts.</td></tr>
           </tbody>
         </table>
       </div>
@@ -91,7 +93,7 @@
       </div>
       <p id="dl-status" class="muted"></p>
       <label>Context length
-        <input id="ctx" type="number" value="8192" />
+        <input id="ctx" type="number" />
       </label>
       <label>Port (blank = auto)
         <input id="port" type="number" />
