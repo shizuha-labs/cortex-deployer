@@ -5,9 +5,18 @@ Local control plane for open models. One process, a browser UI, and an OpenAI-co
 Windows, Linux, and macOS.
 
 ```bash
-pip install git+https://github.com/shizuha-labs/cortex-deployer.git
+curl -fsSL https://cortex.shizuha.com/deployer/install.sh | bash
 cortex-deployer server
 # open http://127.0.0.1:7480  →  Choose a Qwen build
+```
+
+The installer does **not** use the OS `pip` (Debian/Ubuntu PEP 668). It bootstraps an isolated `uv` + CPython under `~/.cortex-deployer` and puts a wrapper on `~/.local/bin`.
+
+Windows PowerShell:
+
+```powershell
+irm https://cortex.shizuha.com/deployer/install.ps1 | iex
+cortex-deployer server
 ```
 
 Or from a checkout: `python -m cortex_deployer server`.
@@ -32,16 +41,14 @@ Engines: **llama.cpp**, **SGLang**, **vLLM**, **MLX**.
 16 GB cards use **Q3** (`UD-Q3_K_XL` ~13.4 GB). Q4 is marked tight/skip.
 
 1. NVIDIA Game Ready / Studio driver (the only host install).
-2. Python 3.11+ from python.org — tick **Add python.exe to PATH**.
-3. In PowerShell:
+2. In PowerShell:
 
 ```powershell
-py -3.12 -m pip install --upgrade pip
-py -3.12 -m pip install "git+https://github.com/shizuha-labs/cortex-deployer.git"
+irm https://cortex.shizuha.com/deployer/install.ps1 | iex
 cortex-deployer server
 ```
 
-4. Open http://127.0.0.1:7480 and click **Choose a Qwen build**.
+3. Open http://127.0.0.1:7480 and click **Choose a Qwen build**.
 
 The picker shows every Qwen3.8-27B quant from [cortex.shizuha.com/deployer](https://cortex.shizuha.com/deployer). On a 16 GB 5080, **Q3 is recommended**, Q2 is the fallback, Q4 is marked won't-fit. Picking one:
 
