@@ -54,9 +54,14 @@ def _pid_alive(pid: int | None) -> bool:
     return True
 
 
+def _loopback_url(url: str) -> str:
+    # Binding 0.0.0.0 is correct for listen, but clients must hit loopback.
+    return url.replace("://0.0.0.0:", "://127.0.0.1:").replace("://[::]:", "://[::1]:")
+
+
 def _probe(url: str, timeout: float = 2.0) -> bool:
     try:
-        with urlopen(url.rstrip("/") + "/models", timeout=timeout) as resp:
+        with urlopen(_loopback_url(url).rstrip("/") + "/models", timeout=timeout) as resp:
             return 200 <= getattr(resp, "status", 200) < 300
     except (URLError, TimeoutError, OSError, ValueError):
         return False
@@ -89,7 +94,9 @@ def pick_port(preferred: int | None = None) -> int:
 
 
 def resolve_binary(engine: str, override: str = "") -> str:
-    if override:
+    # Recipe argv always starts with a generic name ("llama-server"). That is a
+    # hint, not a resolved path — only use it when the file actually exists.
+    if override and os.path.isfile(override):
         return override
     env_key = {
         "llamacpp": "CORTEX_DEPLOYER_LLAMA_SERVER",
@@ -196,6 +203,21 @@ def stop_backend(backend_id: str) -> dict[str, Any]:
                     pass
     updated = store.update_backend(backend_id, state="stopped", pid=None, healthy=False)
     return updated or backend
+
+
+def autostart_persisted() -> list[dict[str, Any]]:
+    """Restart managed backends that were running last time the server stopped."""
+    started: list[dict[str, Any]] = []
+    for backend in store.list_backends():
+        if backend.get("kind") != "managed":
+            continue
+        if backend.get("state") not in {"running", "starting"} and not backend.get("healthy"):
+            continue
+        try:
+            started.append(start_backend(backend["id"]))
+        except (KeyError, ValueError, OSError):
+            continue
+    return started
 
 
 def deploy_from_spec(spec: dict[str, Any]) -> dict[str, Any]:

@@ -19,6 +19,7 @@ from . import __version__, download, hostinfo, recommend, store
 from . import connect_ctl
 from .recipes import list_examples, load_recipe
 from .runtime import (
+    _loopback_url,
     deploy_from_spec,
     reconcile,
     start_backend,
@@ -213,7 +214,7 @@ def _proxy_openai(payload: dict[str, Any]) -> tuple[int, bytes, str]:
     target = _pick_backend(model)
     if target is None:
         return _json_bytes({"error": "no healthy backend for model"}, 404)
-    base = str(target.get("base_url") or "").rstrip("/")
+    base = _loopback_url(str(target.get("base_url") or "")).rstrip("/")
     req = Request(
         base + "/chat/completions",
         data=json.dumps(payload).encode("utf-8"),
