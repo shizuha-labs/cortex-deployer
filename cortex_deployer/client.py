@@ -26,7 +26,9 @@ from .protocol import (
 
 log = logging.getLogger("cortex-deployer")
 
-UPSTREAM_TIMEOUT = httpx.Timeout(connect=10.0, read=600.0, write=600.0, pool=10.0)
+# read=None: 256K prefills and long thinking turns exceed any idle-read
+# budget; the gateway sends kind=cancel when the consumer is gone.
+UPSTREAM_TIMEOUT = httpx.Timeout(connect=10.0, read=None, write=600.0, pool=10.0)
 DEFAULT_CONCURRENCY = 2
 
 SendFn = Callable[[dict], Awaitable[None]]
@@ -65,6 +67,9 @@ async def relay_request(
                 return
             content = await resp.aread()
             await send(response_frame(rid, resp.status_code, out_headers, content))
+    except asyncio.CancelledError:
+        log.info("upstream cancelled rid=%s %s %s", rid, method, url)
+        raise
     except Exception as exc:  # noqa: BLE001 — report upstream failure to the router
         log.exception("upstream error for %s %s", method, url)
         err = json.dumps({"error": f"deployer upstream error: {exc}"}).encode()
@@ -105,6 +110,7 @@ async def run_once(args: argparse.Namespace) -> None:
 
         sem = asyncio.Semaphore(max(1, int(args.concurrency)))
         inflight: set[asyncio.Task] = set()
+        inflight_by_id: dict[str, asyncio.Task] = {}
 
         async def handle(msg: dict) -> None:
             async with sem:
@@ -120,13 +126,27 @@ async def run_once(args: argparse.Namespace) -> None:
             try:
                 async for raw in ws:
                     msg = json.loads(raw)
+                    if msg.get("kind") == "cancel":
+                        rid = str(msg.get("id") or "")
+                        task = inflight_by_id.pop(rid, None)
+                        if task is not None:
+                            task.cancel()
+                            log.info("cancel rid=%s", rid)
+                        continue
                     if msg.get("kind") in {"response", "start", "chunk", "end", "ok"}:
                         continue
                     if not msg.get("id") or not msg.get("method"):
                         continue
+                    rid = str(msg["id"])
                     task = asyncio.create_task(handle(msg))
                     inflight.add(task)
-                    task.add_done_callback(inflight.discard)
+                    inflight_by_id[rid] = task
+
+                    def _done(t: asyncio.Task, done_rid: str = rid) -> None:
+                        inflight.discard(t)
+                        inflight_by_id.pop(done_rid, None)
+
+                    task.add_done_callback(_done)
             finally:
                 for task in list(inflight):
                     task.cancel()

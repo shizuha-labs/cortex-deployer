@@ -4,6 +4,7 @@ import unittest
 
 from cortex_deployer.protocol import (
     b64d,
+    cancel_frame,
     hello_frame,
     models_with_max_model_len,
     request_wants_stream,
@@ -54,3 +55,6 @@ class ModelsLenTests(unittest.TestCase):
 
     def test_b64_roundtrip(self):
         self.assertEqual(b64d(None), b"")
+
+    def test_cancel_frame(self):
+        self.assertEqual(cancel_frame("rid-9"), {"kind": "cancel", "id": "rid-9"})

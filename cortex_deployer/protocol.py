@@ -89,6 +89,16 @@ def end_frame(request_id: str) -> dict[str, Any]:
     return {"kind": "end", "id": request_id}
 
 
+def cancel_frame(request_id: str) -> dict[str, Any]:
+    """Gateway → Mac: abort the upstream HTTP stream for this request.
+
+    Sent when the Cortex/SCLI consumer is gone (client disconnect, idle
+    timeout, first-byte timeout) so Rapid-MLX releases the seq. Without
+    this, the Mac keeps reading a live SSE body and admission stays full.
+    """
+    return {"kind": "cancel", "id": request_id}
+
+
 def response_frame(
     request_id: str,
     status: int,
