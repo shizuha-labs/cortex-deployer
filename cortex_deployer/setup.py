@@ -73,6 +73,7 @@ def start_setup(recipe_file: str = "") -> dict[str, Any]:
                     raise ValueError("recipe has no download repo and no local GGUF")
                 dl = download.start_download(
                     recipe.model.repo,
+                    filename=recipe.model.filename or "",
                     glob=recipe.download_glob or "",
                 )
                 done = download.wait_job(dl["id"])

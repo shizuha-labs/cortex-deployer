@@ -82,6 +82,7 @@ def handle(method: str, path: str, body: bytes) -> tuple[int, bytes, str]:
                     "min_vram_mb": rec.min_vram_mb,
                     "notes": rec.notes,
                     "download_repo": rec.model.repo,
+                    "download_filename": rec.model.filename,
                     "download_glob": rec.download_glob,
                 }
             )
@@ -112,6 +113,14 @@ def handle(method: str, path: str, body: bytes) -> tuple[int, bytes, str]:
         return _json_bytes(job)
     if method == "GET" and route == "/api/local-models":
         return _json_bytes({"models": download.list_local_models()})
+    if method == "GET" and route == "/api/settings":
+        return _json_bytes({"hf_token_set": bool(download.hf_token())})
+    if method == "POST" and route == "/api/settings":
+        if not isinstance(payload, dict):
+            return _json_bytes({"error": "object required"}, 400)
+        if "hf_token" in payload:
+            download.save_hf_token(str(payload.get("hf_token") or ""))
+        return _json_bytes({"hf_token_set": bool(download.hf_token())})
     if method == "GET" and route == "/api/setup":
         return _json_bytes({"jobs": setup.list_jobs()})
     if method == "POST" and route == "/api/setup":
