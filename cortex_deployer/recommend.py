@@ -4,6 +4,7 @@ from __future__ import annotations
 
 from typing import Any
 
+from . import catalog as catalog_mod
 from . import hostinfo
 from .recipes import list_examples, load_recipe
 
@@ -92,9 +93,39 @@ def recommend() -> dict[str, Any]:
         )
     )
     best = next((r for r in rows if r["fit"] == "recommended"), None)
+    cat = catalog_mod.fetch_catalog()
+    models: list[dict[str, Any]] = []
+    for model in cat.get("models") or []:
+        if not isinstance(model, dict):
+            continue
+        quants: list[dict[str, Any]] = []
+        for quant in model.get("quants") or []:
+            if not isinstance(quant, dict):
+                continue
+            item = dict(quant)
+            item["fit"] = fit_label(int(item.get("min_vram_mb") or 0), have, apple=apple)
+            if item.get("engine") == "mlx" and not apple:
+                item["fit"] = "skip"
+            if item.get("engine") == "mlx" and apple:
+                item["fit"] = "recommended"
+            quants.append(item)
+        fits = [q for q in quants if q.get("fit") == "recommended"]
+        pick = max(fits, key=lambda q: int(q.get("min_vram_mb") or 0)) if fits else None
+        models.append({
+            "id": model.get("id"),
+            "name": model.get("name"),
+            "summary": model.get("summary"),
+            "params": model.get("params"),
+            "quants": quants,
+            "recommended_quant": (pick or {}).get("id"),
+            "recommended_recipe": (pick or {}).get("recipe"),
+        })
     return {
         "vram_mb": have,
         "apple": apple,
         "best": best["file"] if best else None,
         "recipes": rows,
+        "models": models,
+        "catalog_source": cat.get("source"),
+        "catalog_live": bool(cat.get("fetched")),
     }
