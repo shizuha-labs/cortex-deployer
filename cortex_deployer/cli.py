@@ -68,6 +68,19 @@ def _cmd_recommend(args: argparse.Namespace) -> int:
     return 0
 
 
+def _cmd_setup(args: argparse.Namespace) -> int:
+    from .setup import start_setup, wait_job
+
+    job = start_setup(args.recipe or "")
+    print(f"setup {job['id']} recipe={job.get('recipe')}", flush=True)
+    done = wait_job(job["id"])
+    if done.get("state") == "done":
+        print(done.get("base_url") or "done")
+        return 0
+    print(done.get("error") or "setup failed", flush=True)
+    return 1
+
+
 def _cmd_download(args: argparse.Namespace) -> int:
     from .download import start_download, wait_job
 
@@ -111,7 +124,7 @@ def _cmd_server(args: argparse.Namespace) -> int:
     started = autostart_persisted()
     url = f"http://{host}:{port}/"
     print(f"Cortex Deployer UI  {url}")
-    print("API                 /api/backends  /api/recommend  /api/downloads  /v1/models")
+    print("API                 /api/backends  /api/recommend  /api/setup  /api/downloads  /v1/models")
     if started:
         print(f"autostart           {len(started)} backend(s)")
     print("Ctrl+C to stop.")
@@ -164,6 +177,12 @@ def build_parser() -> argparse.ArgumentParser:
     rec = sub.add_parser("recommend", help="rank bundled recipes against detected VRAM")
     rec.add_argument("--json", action="store_true")
 
+    su = sub.add_parser(
+        "setup",
+        help="one-click: recommended recipe + official llama-server + weights + start",
+    )
+    su.add_argument("--recipe", default="", help="bundled recipe filename (default: GPU fit)")
+
     dl = sub.add_parser("download", help="download Hugging Face GGUF weights")
     dl.add_argument("--repo", required=True, help="org/name")
     dl.add_argument("--filename", default="", help="single file under the repo")
@@ -195,6 +214,7 @@ def main(argv: list[str] | None = None) -> None:
         "run": _cmd_run,
         "connect": _cmd_connect,
         "recommend": _cmd_recommend,
+        "setup": _cmd_setup,
         "download": _cmd_download,
         "server": _cmd_server,
         "up": _cmd_server,

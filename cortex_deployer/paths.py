@@ -21,6 +21,10 @@ def logs_dir() -> Path:
     return home_dir() / "logs"
 
 
+def engines_dir() -> Path:
+    return home_dir() / "engines" / "llamacpp"
+
+
 def ensure_home() -> Path:
     root = home_dir()
     logs_dir().mkdir(parents=True, exist_ok=True)

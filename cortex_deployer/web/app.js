@@ -46,7 +46,7 @@ function render(backends) {
     <div class="stat"><b>${backends.filter((b) => b.state === "running" || b.healthy).length}</b><span>live</span></div>
   `;
   if (!backends.length) {
-    rowsEl.innerHTML = '<tr><td colspan="6" class="empty">No backends yet. Deploy a model or register an existing OpenAI URL.</td></tr>';
+    rowsEl.innerHTML = '<tr><td colspan="6" class="empty">No backends yet. Click <b>Set up recommended Qwen</b> — quant, llama-server, weights, and start are automatic.</td></tr>';
     return;
   }
   rowsEl.innerHTML = backends.map((b) => `
@@ -82,6 +82,10 @@ function paintRecipeNote() {
   note.textContent = bits.filter(Boolean).join(" · ");
   if (rec.served_name && !document.getElementById("served").value) {
     document.getElementById("served").placeholder = rec.served_name;
+  }
+  const ctx = document.getElementById("ctx");
+  if (ctx && rec.context_length && !ctx.dataset.touched) {
+    ctx.value = rec.context_length;
   }
 }
 
@@ -122,10 +126,8 @@ async function refresh() {
   if (binwarn) {
     if (llama) {
       binwarn.textContent = "";
-    } else if (host.os === "Windows") {
-      binwarn.textContent = "llama-server not found. Put llama-server.exe on PATH, under %USERPROFILE%\\llama.cpp\\, or set CORTEX_DEPLOYER_LLAMA_SERVER.";
     } else {
-      binwarn.textContent = "llama-server not found. Install llama.cpp, put llama-server on PATH, or set CORTEX_DEPLOYER_LLAMA_SERVER.";
+      binwarn.textContent = "llama-server not found yet — Set up recommended Qwen installs the official CUDA build automatically.";
     }
   }
   render(list.backends || []);
@@ -147,6 +149,38 @@ async function loadRecipes() {
 
 document.getElementById("btn-refresh").onclick = () => refresh().catch(console.error);
 document.getElementById("btn-deploy").onclick = () => { document.getElementById("deploy-err").textContent = ""; deployDlg.showModal(); };
+document.getElementById("ctx").addEventListener("input", () => { document.getElementById("ctx").dataset.touched = "1"; });
+
+async function runSetup() {
+  const status = document.getElementById("setup-status");
+  const btn = document.getElementById("btn-setup");
+  status.textContent = "starting…";
+  btn.disabled = true;
+  try {
+    const job = await api("/api/setup", { method: "POST", body: "{}" });
+    const tick = async () => {
+      const cur = await api("/api/setup/" + job.id);
+      if (cur.state === "done") {
+        status.textContent = "ready " + (cur.served_name || "") + " @ " + (cur.base_url || "");
+        btn.disabled = false;
+        await refresh();
+        return;
+      }
+      if (cur.state === "error") {
+        status.textContent = cur.error || "setup failed";
+        btn.disabled = false;
+        return;
+      }
+      status.textContent = (cur.step || cur.state) + (cur.binary ? " · engine ready" : "");
+      setTimeout(tick, 1500);
+    };
+    tick();
+  } catch (e) {
+    status.textContent = e.message;
+    btn.disabled = false;
+  }
+}
+document.getElementById("btn-setup").onclick = () => runSetup();
 document.getElementById("btn-adopt").onclick = () => { document.getElementById("adopt-err").textContent = ""; adoptDlg.showModal(); };
 document.getElementById("deploy-cancel").onclick = () => deployDlg.close();
 document.getElementById("adopt-cancel").onclick = () => adoptDlg.close();

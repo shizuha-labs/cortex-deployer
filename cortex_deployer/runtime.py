@@ -153,6 +153,9 @@ def start_backend(backend_id: str) -> dict[str, Any]:
     }
     env = os.environ.copy()
     env.update({str(k): str(v) for k, v in (backend.get("env") or {}).items()})
+    bin_dir = str(Path(argv[0]).resolve().parent)
+    if bin_dir and bin_dir not in {".", ""}:
+        env["PATH"] = bin_dir + os.pathsep + env.get("PATH", "")
     popen_kw["env"] = env
     if os.name == "nt":
         flags |= getattr(subprocess, "CREATE_NEW_PROCESS_GROUP", 0)
