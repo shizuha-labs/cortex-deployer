@@ -7,6 +7,7 @@ Windows, Linux, and macOS.
 ```bash
 curl -fsSL https://cortex.shizuha.com/deployer/install.sh | bash
 cortex-deployer server
+# Linux/WSL listens on 0.0.0.0 (WSL eth0 + localhost). Windows default is 127.0.0.1.
 # open http://127.0.0.1:7480  →  Choose a Qwen build
 ```
 
