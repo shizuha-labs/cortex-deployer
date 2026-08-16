@@ -36,5 +36,5 @@ class SpecTests(unittest.TestCase):
         path = next(p for p in list_examples() if p.name == "qwen38-27b-q3-llamacpp.yaml")
         recipe = load_recipe(path)
         self.assertEqual(recipe.model.repo, "unsloth/Qwen3.8-27B-GGUF")
-        self.assertEqual(recipe.min_vram_mb, 14000)
+        self.assertEqual(recipe.min_vram_mb, 22000)
         self.assertIn("UD-Q3_K_XL", recipe.download_glob)

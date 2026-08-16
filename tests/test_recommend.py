@@ -18,7 +18,7 @@ class RecommendTests(unittest.TestCase):
         self.assertEqual(fit_label(22000, 8000, apple=False), "skip")
         self.assertEqual(fit_label(14000, 0, apple=False), "cpu")
 
-    def test_16gb_prefers_q3(self):
+    def test_16gb_prefers_9b_longctx(self):
         snap = {
             "gpus": [{"vendor": "nvidia", "memory_mb": 16376, "name": "RTX 5080"}],
             "os": "Windows",
@@ -26,20 +26,23 @@ class RecommendTests(unittest.TestCase):
         with patch("cortex_deployer.recommend.hostinfo.snapshot", return_value=snap):
             out = recommend()
         self.assertEqual(out["vram_mb"], 16376)
-        self.assertEqual(out["best"], "qwen38-27b-q3-llamacpp.yaml")
+        self.assertEqual(out["tier"], "16gb")
+        self.assertEqual(out["best"], "qwen35-9b-q6-llamacpp.yaml")
         qwen = next(m for m in out["models"] if m["id"] == "qwen3.8-27b")
-        self.assertEqual(qwen["recommended_recipe"], "qwen38-27b-q3-llamacpp.yaml")
-        fits = {r["file"]: r["fit"] for r in out["recipes"]}
-        self.assertEqual(fits["qwen38-27b-q3-llamacpp.yaml"], "recommended")
-        self.assertEqual(fits["qwen38-27b-q2-llamacpp.yaml"], "ok")
-        self.assertIn(fits["qwen38-27b-llamacpp.yaml"], {"tight", "skip"})
+        self.assertEqual(qwen["recommended_recipe"], "qwen38-27b-q2-llamacpp.yaml")
         qfits = {q["id"]: q["fit"] for q in qwen["quants"]}
-        self.assertEqual(qwen["recommended_quant"], "qwen38-27b-q3")
-        self.assertEqual(qfits["qwen38-27b-q3"], "recommended")
-        self.assertEqual(qfits["qwen38-27b-q2"], "ok")
-        self.assertEqual(qfits["qwen38-27b-q4"], "tight")
-        rec_quants = [q["id"] for q in qwen["quants"] if q["fit"] == "recommended"]
-        self.assertEqual(rec_quants, ["qwen38-27b-q3"])
+        self.assertEqual(qwen["recommended_quant"], "qwen38-27b-q2")
+        self.assertEqual(qfits["qwen38-27b-q2"], "recommended")
+        self.assertEqual(qfits["qwen38-27b-q3"], "tight")
+        self.assertEqual(qfits["qwen38-27b-q4"], "skip")
+        nine = next(m for m in out["models"] if m["id"] == "qwen3.5-9b")
+        self.assertEqual(nine["recommended_quant"], "qwen35-9b-q6")
+        fourteen = next(m for m in out["models"] if m["id"] == "qwen3-14b")
+        self.assertEqual(fourteen["recommended_quant"], "qwen3-14b-q4")
+        fits = {r["file"]: r["fit"] for r in out["recipes"]}
+        self.assertEqual(fits["qwen35-9b-q6-llamacpp.yaml"], "recommended")
+        self.assertEqual(fits["qwen38-27b-q2-llamacpp.yaml"], "ok")
+        self.assertIn(fits["qwen38-27b-q3-llamacpp.yaml"], {"tight", "skip"})
         self.assertNotEqual(out["best"], "sglang-openai.yaml")
         self.assertNotEqual(out["best"], "vllm-openai.yaml")
 
@@ -66,4 +69,4 @@ class RecommendTests(unittest.TestCase):
         with patch("cortex_deployer.recommend.hostinfo.snapshot", return_value=snap):
             out = recommend()
         self.assertTrue(out["apple"])
-        self.assertEqual(out["best"], "mlx-macos.yaml")
+        self.assertEqual(out["best"], "qwen38-27b-mlx.yaml")

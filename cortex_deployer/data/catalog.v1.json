@@ -1,10 +1,10 @@
 {
   "schema": "cortex.deployer.catalog.v1",
-  "updated_at": "2026-08-17T12:00:00Z",
+  "updated_at": "2026-08-17T00:50:00Z",
   "source": "https://cortex.shizuha.com/deployer/catalog.json",
-  "notes": "Curated hardware × model × quant pairs for Cortex Deployer. Live GPU fit happens on the local app; this file is the shared recommendation source.",
+  "notes": "Curated hardware × model × quant. min_vram_mb includes weights + KV at the listed ctx + Windows display/CUDA headroom. Live 16 GB 5080 (2026-08-17): 27B Q2 fills the card at 8k ctx; 27B Q3 is not a 16 GB pick. 16 GB agentic default is a smaller model with 64k+ ctx.",
   "deployer_release": {
-    "version": "0.3.8",
+    "version": "0.3.9",
     "tarball": "https://github.com/shizuha-labs/cortex-deployer/archive/refs/heads/main.tar.gz"
   },
   "hardware_tiers": [
@@ -13,38 +13,193 @@
       "label": "16 GB NVIDIA",
       "vram_mb": 16384,
       "examples": ["RTX 5080", "RTX 4080 16GB", "RTX 4070 Ti Super"],
-      "recommend": { "qwen3.8-27b": "qwen38-27b-q3" }
+      "recommend": {
+        "default": "qwen35-9b-q6",
+        "qwen3.5-9b": "qwen35-9b-q6",
+        "qwen3-14b": "qwen3-14b-q4",
+        "qwen3-30b-a3b": "qwen3-30b-a3b-q2",
+        "qwen3.8-27b": "qwen38-27b-q2"
+      }
     },
     {
       "id": "24gb",
       "label": "24 GB NVIDIA",
       "vram_mb": 24576,
       "examples": ["RTX 3090", "RTX 4090"],
-      "recommend": { "qwen3.8-27b": "qwen38-27b-q4" }
+      "recommend": {
+        "default": "qwen38-27b-q4",
+        "qwen3.5-9b": "qwen35-9b-q8",
+        "qwen3-14b": "qwen3-14b-q5",
+        "qwen3-30b-a3b": "qwen3-30b-a3b-q3",
+        "qwen3.8-27b": "qwen38-27b-q4"
+      }
     },
     {
       "id": "8gb",
       "label": "8–12 GB NVIDIA",
       "vram_mb": 8192,
       "examples": ["RTX 3070", "RTX 4060"],
-      "recommend": { "qwen3.8-27b": "qwen38-27b-q2" }
+      "recommend": {
+        "default": "qwen35-9b-q5",
+        "qwen3.5-9b": "qwen35-9b-q5",
+        "qwen3-14b": "qwen3-14b-q4",
+        "qwen3.8-27b": "qwen38-27b-q2"
+      }
     },
     {
       "id": "apple",
       "label": "Apple Silicon",
       "vram_mb": 0,
       "examples": ["M4 Max", "M3 Ultra"],
-      "recommend": { "qwen3.8-27b": "qwen38-27b-mlx" }
+      "recommend": {
+        "default": "qwen38-27b-mlx",
+        "qwen3.8-27b": "qwen38-27b-mlx"
+      }
     }
   ],
   "models": [
+    {
+      "id": "qwen3.5-9b",
+      "name": "Qwen3.5-9B",
+      "family": "qwen",
+      "params": "9B",
+      "context_native": 262144,
+      "role": "agentic",
+      "summary": "Best 16 GB agentic default. High-quality 9B, 64k–256k ctx, lots of KV headroom. Use this for tool/agent loops.",
+      "docs": "https://cortex.shizuha.com/deployer/models/qwen3.5-9b",
+      "quants": [
+        {
+          "id": "qwen35-9b-q5",
+          "quant": "UD-Q5_K_XL",
+          "recipe": "qwen35-9b-q5-llamacpp.yaml",
+          "engine": "llamacpp",
+          "served_name": "Qwen3.5-9B-Q5",
+          "min_vram_mb": 10000,
+          "weight_gb": 6.7,
+          "context_length": 65536,
+          "download_repo": "unsloth/Qwen3.5-9B-GGUF",
+          "download_filename": "Qwen3.5-9B-UD-Q5_K_XL.gguf",
+          "download_glob": "*UD-Q5_K_XL.gguf",
+          "notes": "8–12 GB pick. 64k ctx. Fast agent loops."
+        },
+        {
+          "id": "qwen35-9b-q6",
+          "quant": "UD-Q6_K_XL",
+          "recipe": "qwen35-9b-q6-llamacpp.yaml",
+          "engine": "llamacpp",
+          "served_name": "Qwen3.5-9B-Q6",
+          "min_vram_mb": 12000,
+          "weight_gb": 8.8,
+          "context_length": 65536,
+          "download_repo": "unsloth/Qwen3.5-9B-GGUF",
+          "download_filename": "Qwen3.5-9B-UD-Q6_K_XL.gguf",
+          "download_glob": "*UD-Q6_K_XL.gguf",
+          "notes": "Recommended on 16 GB for agents. 64k+ ctx with headroom. Not a 27B squeeze."
+        },
+        {
+          "id": "qwen35-9b-q8",
+          "quant": "UD-Q8_K_XL",
+          "recipe": "qwen35-9b-q8-llamacpp.yaml",
+          "engine": "llamacpp",
+          "served_name": "Qwen3.5-9B-Q8",
+          "min_vram_mb": 17000,
+          "weight_gb": 13.0,
+          "context_length": 65536,
+          "download_repo": "unsloth/Qwen3.5-9B-GGUF",
+          "download_filename": "Qwen3.5-9B-UD-Q8_K_XL.gguf",
+          "download_glob": "*UD-Q8_K_XL.gguf",
+          "notes": "Near-lossless 9B. Comfortable on 24 GB with long ctx. Tight on 16 GB."
+        }
+      ]
+    },
+    {
+      "id": "qwen3-14b",
+      "name": "Qwen3-14B",
+      "family": "qwen",
+      "params": "14B",
+      "context_native": 131072,
+      "role": "agentic",
+      "summary": "Stronger than 9B for coding/agents, still 64k+ on 16 GB at Q4.",
+      "docs": "https://cortex.shizuha.com/deployer/models/qwen3-14b",
+      "quants": [
+        {
+          "id": "qwen3-14b-q4",
+          "quant": "UD-Q4_K_XL",
+          "recipe": "qwen3-14b-q4-llamacpp.yaml",
+          "engine": "llamacpp",
+          "served_name": "Qwen3-14B-Q4",
+          "min_vram_mb": 13500,
+          "weight_gb": 9.2,
+          "context_length": 65536,
+          "download_repo": "unsloth/Qwen3-14B-GGUF",
+          "download_filename": "Qwen3-14B-UD-Q4_K_XL.gguf",
+          "download_glob": "*UD-Q4_K_XL.gguf",
+          "notes": "16 GB quality step-up from 9B. 64k ctx. YaRN to 128k if you shrink KV."
+        },
+        {
+          "id": "qwen3-14b-q5",
+          "quant": "UD-Q5_K_XL",
+          "recipe": "qwen3-14b-q5-llamacpp.yaml",
+          "engine": "llamacpp",
+          "served_name": "Qwen3-14B-Q5",
+          "min_vram_mb": 17000,
+          "weight_gb": 10.5,
+          "context_length": 65536,
+          "download_repo": "unsloth/Qwen3-14B-GGUF",
+          "download_filename": "Qwen3-14B-UD-Q5_K_XL.gguf",
+          "download_glob": "*UD-Q5_K_XL.gguf",
+          "notes": "24 GB pick for 14B. Tight on 16 GB once 64k KV is allocated."
+        }
+      ]
+    },
+    {
+      "id": "qwen3-30b-a3b",
+      "name": "Qwen3-30B-A3B",
+      "family": "qwen",
+      "params": "30B-A3B",
+      "context_native": 131072,
+      "role": "agentic",
+      "summary": "MoE (3B active). Bigger brain than 14B at similar decode cost. Q2 is the 16 GB ceiling.",
+      "docs": "https://cortex.shizuha.com/deployer/models/qwen3-30b-a3b",
+      "quants": [
+        {
+          "id": "qwen3-30b-a3b-q2",
+          "quant": "UD-Q2_K_XL",
+          "recipe": "qwen3-30b-a3b-q2-llamacpp.yaml",
+          "engine": "llamacpp",
+          "served_name": "Qwen3-30B-A3B-Q2",
+          "min_vram_mb": 15000,
+          "weight_gb": 11.8,
+          "context_length": 65536,
+          "download_repo": "unsloth/Qwen3-30B-A3B-GGUF",
+          "download_filename": "Qwen3-30B-A3B-UD-Q2_K_XL.gguf",
+          "download_glob": "*UD-Q2_K_XL.gguf",
+          "notes": "16 GB MoE option. 64k ctx. Q3 (13.8 GB weights) will not leave KV room on 16 GB."
+        },
+        {
+          "id": "qwen3-30b-a3b-q3",
+          "quant": "UD-Q3_K_XL",
+          "recipe": "qwen3-30b-a3b-q3-llamacpp.yaml",
+          "engine": "llamacpp",
+          "served_name": "Qwen3-30B-A3B-Q3",
+          "min_vram_mb": 20000,
+          "weight_gb": 13.8,
+          "context_length": 65536,
+          "download_repo": "unsloth/Qwen3-30B-A3B-GGUF",
+          "download_filename": "Qwen3-30B-A3B-UD-Q3_K_XL.gguf",
+          "download_glob": "*UD-Q3_K_XL.gguf",
+          "notes": "24 GB MoE pick. Skip on 16 GB."
+        }
+      ]
+    },
     {
       "id": "qwen3.8-27b",
       "name": "Qwen3.8-27B",
       "family": "qwen",
       "params": "27B",
       "context_native": 262144,
-      "summary": "Unsloth thinking+coding 27B. First-class Cortex Deployer recipe family. Pick quant from live VRAM — Q4 needs 24 GB, Q3 is the 16 GB 5080 pick.",
+      "role": "max-quality",
+      "summary": "Dense 27B. Unsloth: 4-bit wants 17–19 GB. Live 16 GB 5080: Q2 fills the card at 8k ctx. Not the 16 GB agentic pick.",
       "docs": "https://cortex.shizuha.com/deployer/models/qwen3.8-27b",
       "quants": [
         {
@@ -53,13 +208,13 @@
           "recipe": "qwen38-27b-q2-llamacpp.yaml",
           "engine": "llamacpp",
           "served_name": "Qwen3.8-27B-Q2",
-          "min_vram_mb": 9000,
+          "min_vram_mb": 15500,
           "weight_gb": 10.7,
           "context_length": 8192,
           "download_repo": "unsloth/Qwen3.8-27B-GGUF",
           "download_filename": "Qwen3.8-27B-UD-Q2_K_XL.gguf",
           "download_glob": "*UD-Q2_K_XL.gguf",
-          "notes": "Fits 8–12 GB. Quality drop vs Q3. Use only if Q3 OOMs."
+          "notes": "Only 27B quant that fits 16 GB. Fills the card. Short ctx. Prefer 9B/14B for 64k agents."
         },
         {
           "id": "qwen38-27b-q3",
@@ -67,13 +222,13 @@
           "recipe": "qwen38-27b-q3-llamacpp.yaml",
           "engine": "llamacpp",
           "served_name": "Qwen3.8-27B-Q3",
-          "min_vram_mb": 14000,
+          "min_vram_mb": 22000,
           "weight_gb": 13.4,
           "context_length": 16384,
           "download_repo": "unsloth/Qwen3.8-27B-GGUF",
           "download_filename": "Qwen3.8-27B-UD-Q3_K_XL.gguf",
           "download_glob": "*UD-Q3_K_XL.gguf",
-          "notes": "Recommended on 16 GB Blackwell (RTX 5080). Q4 will not fit."
+          "notes": "13.4 GB weights + KV. Skip on 16 GB — Q2 already saturates a 5080."
         },
         {
           "id": "qwen38-27b-q4",
@@ -81,13 +236,13 @@
           "recipe": "qwen38-27b-llamacpp.yaml",
           "engine": "llamacpp",
           "served_name": "Qwen3.8-27B-Q4",
-          "min_vram_mb": 22000,
+          "min_vram_mb": 24000,
           "weight_gb": 17.9,
-          "context_length": 122880,
+          "context_length": 32768,
           "download_repo": "unsloth/Qwen3.8-27B-GGUF",
           "download_filename": "Qwen3.8-27B-UD-Q4_K_XL.gguf",
           "download_glob": "*UD-Q4_K_XL.gguf",
-          "notes": "Quality pick on 24 GB (RTX 3090 class). Skip on 16 GB."
+          "notes": "Unsloth 17–19 GB floor. 24 GB class only."
         },
         {
           "id": "qwen38-27b-mlx",

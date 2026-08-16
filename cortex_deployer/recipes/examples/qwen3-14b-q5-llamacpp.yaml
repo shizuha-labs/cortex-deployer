@@ -1,0 +1,29 @@
+schema_version: deployer.recipe.v1
+name: qwen3-14b-q5-llamacpp
+engine: llamacpp
+executor: process
+quant: UD-Q5_K_XL
+min_vram_mb: 17000
+notes: 24 GB 14B pick. Tight on 16 GB at 64k.
+download_glob: "*UD-Q5_K_XL.gguf"
+model:
+  id: Qwen3-14B-Q5
+  served_name: Qwen3-14B-Q5
+  source:
+    kind: huggingface
+    repo: unsloth/Qwen3-14B-GGUF
+    filename: Qwen3-14B-UD-Q5_K_XL.gguf
+    path: ""
+launch:
+  host: 127.0.0.1
+  port: 8080
+  context_length: 65536
+  extra_args:
+    - --n-gpu-layers
+    - "99"
+    - -np
+    - "1"
+connect:
+  aliases:
+    - Qwen3-14B-Q5
+  max_concurrent: 1
