@@ -147,7 +147,62 @@ async function loadRecipes() {
   paintRecipeNote();
 }
 
+async function paintVersion() {
+  const el = document.getElementById("verline");
+  if (!el) return;
+  try {
+    const v = await api("/api/version");
+    el.textContent = v.update_available
+      ? `v${v.version} · update ${v.latest}`
+      : `v${v.version}`;
+  } catch {
+    el.textContent = "";
+  }
+}
+
 document.getElementById("btn-refresh").onclick = () => refresh().catch(console.error);
+document.getElementById("btn-catalog").onclick = async () => {
+  const status = document.getElementById("setup-status");
+  try {
+    const r = await api("/api/catalog/refresh", { method: "POST", body: "{}" });
+    status.textContent = r.fetched
+      ? `catalog refreshed${r.updated_at ? " · " + r.updated_at : ""}`
+      : "catalog refresh used the bundled copy";
+    await loadRecipes();
+    await paintVersion();
+  } catch (e) {
+    status.textContent = e.message;
+  }
+};
+document.getElementById("btn-update").onclick = async () => {
+  const status = document.getElementById("setup-status");
+  const btn = document.getElementById("btn-update");
+  btn.disabled = true;
+  status.textContent = "updating Cortex Deployer…";
+  try {
+    await api("/api/update", { method: "POST", body: "{}" });
+    status.textContent = "updated — restarting…";
+    const start = Date.now();
+    const tick = async () => {
+      if (Date.now() - start > 60000) {
+        status.textContent = "restarted — reload this tab if the UI does not return";
+        btn.disabled = false;
+        return;
+      }
+      try {
+        await api("/api/health");
+        status.textContent = "updated — reloading";
+        location.reload();
+      } catch {
+        setTimeout(tick, 800);
+      }
+    };
+    setTimeout(tick, 1500);
+  } catch (e) {
+    status.textContent = e.message;
+    btn.disabled = false;
+  }
+};
 document.getElementById("btn-deploy").onclick = () => { document.getElementById("deploy-err").textContent = ""; deployDlg.showModal(); };
 document.getElementById("ctx").addEventListener("input", () => { document.getElementById("ctx").dataset.touched = "1"; });
 
@@ -159,12 +214,13 @@ async function openPicker() {
   const qwen = (rec.models || []).find((m) => m.id === "qwen3.8-27b") || { quants: [] };
   const box = document.getElementById("pick-rows");
   box.innerHTML = (qwen.quants || []).map((q) => {
-    const recd = q.recipe === rec.best || q.id === qwen.recommended_quant;
+    const recd = q.id === qwen.recommended_quant || q.recipe === qwen.recommended_recipe;
     const skip = q.fit === "skip";
+    const fit = q.fit === "recommended" ? "pick" : (q.fit === "ok" ? "fits" : q.fit);
     return `<div class="pick-card ${recd ? "rec" : ""} ${skip ? "skip" : ""}">
       <div>
         <strong>${esc(q.quant)}</strong> ${recd ? '<span class="muted">recommended</span>' : ""}
-        <div class="muted">${esc(q.fit)} · ≥${q.min_vram_mb || 0} MB · ${q.weight_gb || "?"} GB · ctx ${q.context_length || "—"}</div>
+        <div class="muted">${esc(fit)} · ≥${q.min_vram_mb || 0} MB · ${q.weight_gb || "?"} GB · ctx ${q.context_length || "—"}</div>
         <div class="muted">${esc(q.notes || "")}</div>
       </div>
       <button class="primary" data-recipe="${esc(q.recipe || "")}" ${skip ? "disabled" : ""}>${skip ? "won't fit" : "Use this"}</button>
@@ -173,20 +229,9 @@ async function openPicker() {
   document.getElementById("pick-dlg").showModal();
 }
 
-let lastRecipe = "";
-
-function showHfBox(err) {
-  const box = document.getElementById("hf-box");
-  const msg = String(err || "");
-  const hit = /403|429|rate limit|Hugging Face HTTP/i.test(msg);
-  box.hidden = !hit;
-  return hit;
-}
-
 async function runSetup(recipe) {
   const status = document.getElementById("setup-status");
   const btn = document.getElementById("btn-setup");
-  lastRecipe = recipe || "";
   status.textContent = "starting " + (recipe || "recommended") + "…";
   btn.disabled = true;
   try {
@@ -204,7 +249,6 @@ async function runSetup(recipe) {
       }
       if (cur.state === "error") {
         status.textContent = cur.error || "setup failed";
-        showHfBox(cur.error);
         btn.disabled = false;
         return;
       }
@@ -219,21 +263,7 @@ async function runSetup(recipe) {
 }
 document.getElementById("btn-setup").onclick = () => openPicker().catch((e) => {
   document.getElementById("setup-status").textContent = e.message;
-  showHfBox(e.message);
 });
-document.getElementById("hf-save").onclick = async () => {
-  const token = document.getElementById("hf-token").value.trim();
-  const status = document.getElementById("setup-status");
-  if (!token) { status.textContent = "paste an HF token first"; return; }
-  try {
-    await api("/api/settings", { method: "POST", body: JSON.stringify({ hf_token: token }) });
-    document.getElementById("hf-box").hidden = true;
-    status.textContent = "token saved — retrying…";
-    runSetup(lastRecipe);
-  } catch (e) {
-    status.textContent = e.message;
-  }
-};
 document.getElementById("pick-cancel").onclick = () => document.getElementById("pick-dlg").close();
 document.getElementById("pick-rows").addEventListener("click", (ev) => {
   const btn = ev.target.closest("button[data-recipe]");
@@ -457,5 +487,5 @@ rowsEl.addEventListener("click", async (ev) => {
   }
 });
 
-loadRecipes().then(refresh).catch((e) => { hostline.textContent = e.message; });
+loadRecipes().then(refresh).then(paintVersion).catch((e) => { hostline.textContent = e.message; });
 setInterval(() => refresh().catch(() => {}), 4000);

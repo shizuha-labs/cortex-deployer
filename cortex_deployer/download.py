@@ -13,6 +13,7 @@ from typing import Any
 from urllib.error import HTTPError, URLError
 from urllib.request import Request, urlopen
 
+from . import __version__
 from .paths import home_dir
 
 _jobs: dict[str, dict[str, Any]] = {}
@@ -71,7 +72,7 @@ def save_hf_token(token: str) -> None:
 
 
 def _hf_headers() -> dict[str, str]:
-    headers = {"user-agent": "cortex-deployer/0.3.5"}
+    headers = {"user-agent": f"cortex-deployer/{__version__}"}
     token = hf_token()
     if token:
         headers["authorization"] = f"Bearer {token}"
@@ -83,10 +84,9 @@ def _friendly_hf_error(exc: BaseException) -> str:
     reason = str(getattr(exc, "reason", "") or exc)
     if code in {403, 429} or "rate limit" in reason.lower():
         return (
-            f"Hugging Face HTTP {code or '?'} ({reason}). "
-            "Anonymous downloads from this network are throttled. "
-            "Create a free read token at https://huggingface.co/settings/tokens "
-            "and set HF_TOKEN, or paste it in the UI, then retry."
+            f"Download blocked (HTTP {code or '?'}). "
+            "Retry — the app will try Hugging Face and a public mirror. "
+            "No account or token is required."
         )
     return str(exc)
 
@@ -146,6 +146,18 @@ def select_weight_files(names: list[str], glob: str = "") -> list[str]:
     return out
 
 
+def _candidate_urls(repo: str, name: str) -> list[str]:
+    urls = [
+        f"https://huggingface.co/{repo}/resolve/main/{name}?download=true",
+        f"https://huggingface.co/{repo}/resolve/main/{name}",
+        f"https://hf-mirror.com/{repo}/resolve/main/{name}?download=true",
+    ]
+    extra = (os.environ.get("CORTEX_DEPLOYER_HF_MIRROR") or "").rstrip("/")
+    if extra:
+        urls.insert(1, f"{extra}/{repo}/resolve/main/{name}")
+    return urls
+
+
 def list_hf_files(repo: str, glob: str = "") -> list[str]:
     url = f"https://huggingface.co/api/models/{repo}"
     req = Request(url, headers=_hf_headers())
@@ -198,7 +210,9 @@ def _download_one(url: str, dest: Path, job: dict[str, Any]) -> None:
             return
         except HTTPError as exc:
             last = exc
-            if exc.code not in {403, 429, 500, 502, 503} or attempt == 4:
+            if exc.code in {401, 403, 404}:
+                raise ValueError(_friendly_hf_error(exc)) from exc
+            if exc.code not in {429, 500, 502, 503} or attempt == 4:
                 raise ValueError(_friendly_hf_error(exc)) from exc
             time.sleep(2 * attempt)
         except URLError as exc:
@@ -241,9 +255,17 @@ def start_download(repo: str, filename: str = "", glob: str = "") -> dict[str, A
             for name in names:
                 job["filename"] = name
                 job["state"] = "downloading"
-                url = f"https://huggingface.co/{repo}/resolve/main/{name}?download=true"
                 dest = models_dir() / repo.replace("/", "__") / Path(name)
-                _download_one(url, dest, job)
+                last_err: BaseException | None = None
+                for url in _candidate_urls(repo, name):
+                    try:
+                        _download_one(url, dest, job)
+                        last_err = None
+                        break
+                    except (HTTPError, URLError, ValueError, OSError) as exc:
+                        last_err = exc
+                if last_err:
+                    raise last_err
                 saved.append(str(dest))
             job["files"] = saved
             ggufs = [p for p in saved if p.lower().endswith(".gguf") and "mmproj" not in p.lower()]

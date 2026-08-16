@@ -10,7 +10,7 @@ cortex-deployer server
 # open http://127.0.0.1:7480  →  Choose a Qwen build
 ```
 
-The installer does **not** use the OS `pip` (Debian/Ubuntu PEP 668). It bootstraps an isolated `uv` + CPython under `~/.cortex-deployer` and puts a wrapper on `~/.local/bin`.
+The installer does **not** use the OS `pip` (Debian/Ubuntu PEP 668). It bootstraps an isolated `uv` + CPython under `~/.cortex-deployer` and puts a wrapper on `~/.local/bin`. Re-running it upgrades the app in place and **keeps** `~/.cortex-deployer/models`. After 0.3.6 the running UI can also **Update Deployer** / **Refresh catalog** without a reinstall.
 
 Windows PowerShell:
 
@@ -60,13 +60,14 @@ Chat in the same page, or point any OpenAI client at `http://127.0.0.1:7480/v1`.
 
 Optional **Cortex** on a row announces it to a Cortex gateway (token from the Cortex UI). `connect` never invents a token.
 
-State lives in `%USERPROFILE%\.cortex-deployer\` (override with `CORTEX_DEPLOYER_HOME`). If Hugging Face returns 403/429, set `HF_TOKEN` (or paste a token in the UI) — anonymous downloads are often rate-limited.
+State lives in `%USERPROFILE%\.cortex-deployer\` (override with `CORTEX_DEPLOYER_HOME`). Downloads do **not** ask for a Hugging Face token. The app tries Hugging Face, then a public mirror. No shared/default token is baked in (it would be extracted and banned). Optional: `HF_TOKEN` in the environment for private repos only.
 
 ## CLI
 
 ```bash
 cortex-deployer server --host 127.0.0.1 --port 7480   # also: up, web
 # if 7480 is excluded/busy (common on Windows), the next free high port is used
+cortex-deployer update                                # pull GitHub main into the isolated venv
 cortex-deployer setup                                 # one-click recommended Qwen
 cortex-deployer recommend
 cortex-deployer download --repo unsloth/Qwen3.8-27B-GGUF --glob '*UD-Q3_K_XL.gguf'
