@@ -116,11 +116,16 @@ def _cmd_run(args: argparse.Namespace) -> int:
     return 0
 
 def _cmd_server(args: argparse.Namespace) -> int:
+    from . import selfupdate
     from .httpapi import serve
     from .runtime import autostart_persisted
 
     host = args.host
     port = int(args.port)
+    if args.auto_update:
+        selfupdate.set_auto_update(True)
+    auto = bool(args.auto_update) or selfupdate.auto_update_enabled()
+    selfupdate.apply_on_start(auto=auto, host=host, port=port)
     httpd = serve(host, port)
     bound_host, bound_port = httpd.server_address[:2]
     started = autostart_persisted()
@@ -148,21 +153,48 @@ def _cmd_version(_args: argparse.Namespace) -> int:
     return 0
 
 
-def _cmd_update(_args: argparse.Namespace) -> int:
+def _cmd_update(args: argparse.Namespace) -> int:
     from . import catalog, selfupdate
 
     cat = catalog.fetch_catalog(force=True, timeout=8.0)
     latest = selfupdate.latest_from_catalog(cat)
     print(f"current={__version__} latest={latest or '?'}")
+    if args.check:
+        return 0 if not selfupdate.update_available(latest) else 2
+    if latest and not selfupdate.update_available(latest) and not args.force:
+        print("already current — models stay, no reinstall needed")
+        return 0
     try:
         result = selfupdate.run_update(selfupdate.tarball_from_catalog(cat))
     except RuntimeError as exc:
         print(exc, file=sys.stderr)
         return 1
-    print("updated — restart: cortex-deployer server")
+    print("updated in place (models kept)")
     if result.get("detail"):
         print(result["detail"])
+    if args.restart:
+        host = default_bind_host()
+        os.execv(
+            sys.executable,
+            [sys.executable, "-m", "cortex_deployer", "server", "--host", host],
+        )
+    print("restart: cortex-deployer server")
     return 0
+
+
+def _cmd_auto_update(args: argparse.Namespace) -> int:
+    from . import selfupdate
+
+    if args.off:
+        selfupdate.set_auto_update(False)
+        print("auto-update off")
+        return 0
+    selfupdate.set_auto_update(True)
+    print("auto-update on — server upgrades in place on start")
+    args.check = False
+    args.force = bool(getattr(args, "force", False))
+    args.restart = bool(getattr(args, "restart", False))
+    return _cmd_update(args)
 
 
 def build_parser() -> argparse.ArgumentParser:
@@ -175,7 +207,19 @@ def build_parser() -> argparse.ArgumentParser:
 
     sub.add_parser("engines", help="list supported engines")
     sub.add_parser("recipes", help="list bundled example recipes")
-    sub.add_parser("update", help="upgrade this isolated install from GitHub main")
+    upd = sub.add_parser(
+        "update",
+        aliases=["upgrade"],
+        help="upgrade this install in place from GitHub main (keeps models)",
+    )
+    upd.add_argument("--check", action="store_true", help="print versions and exit 2 if newer")
+    upd.add_argument("--force", action="store_true", help="reinstall current latest anyway")
+    upd.add_argument("--restart", action="store_true", help="exec server after a successful update")
+    au = sub.add_parser(
+        "auto-update",
+        help="enable upgrade-on-start (persisted) and update now",
+    )
+    au.add_argument("--off", action="store_true", help="disable upgrade-on-start")
 
     render = sub.add_parser("render", help="print argv for a recipe (no spawn)")
     render.add_argument("recipe")
@@ -228,6 +272,11 @@ def build_parser() -> argparse.ArgumentParser:
         default=7480,
         help="preferred listen port (>=1024); if busy or forbidden, the next free high port is used",
     )
+    server.add_argument(
+        "--auto-update",
+        action="store_true",
+        help="if the catalog lists a newer release, upgrade in place then re-exec (or set CORTEX_DEPLOYER_AUTO_UPDATE=1)",
+    )
     return parser
 
 
@@ -250,6 +299,8 @@ def main(argv: list[str] | None = None) -> None:
         "setup": _cmd_setup,
         "download": _cmd_download,
         "update": _cmd_update,
+        "upgrade": _cmd_update,
+        "auto-update": _cmd_auto_update,
         "server": _cmd_server,
         "up": _cmd_server,
         "web": _cmd_server,

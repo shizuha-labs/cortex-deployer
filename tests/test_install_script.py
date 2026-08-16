@@ -28,6 +28,8 @@ class InstallScriptStaticTests(unittest.TestCase):
         self.assertIn('info() { echo "cortex-deployer-install: $*" >&2; }', text)
         self.assertNotIn('uv="$(ensure_uv)"', text)
         self.assertNotIn("if have uv; then", text)
+        self.assertNotIn("venv --clear", text)
+        self.assertIn("cortex-deployer update", text)
 
     def test_help_and_logs_stay_off_stdout(self):
         if not shutil.which("bash"):
@@ -64,6 +66,19 @@ class InstallScriptStaticTests(unittest.TestCase):
         self.assertIn("irm https://cortex.shizuha.com/deployer/install.ps1", text)
         self.assertNotIn("pip3 install", text)
         self.assertIn("pip install --python", text)
+
+    def test_update_script_delegates(self):
+        sh = ROOT / "scripts" / "update.sh"
+        self.assertTrue(sh.is_file())
+        text = sh.read_text(encoding="utf-8")
+        self.assertTrue(text.startswith("#!/usr/bin/env bash\n"))
+        self.assertIn("cortex-deployer update", text)
+        self.assertNotIn("venv --clear", text)
+        self.assertIn("cortex.shizuha.com/deployer/update.sh", text)
+        ps1 = ROOT / "scripts" / "update.ps1"
+        self.assertIn("cortex-deployer update", ps1.read_text(encoding="utf-8"))
+        if shutil.which("bash"):
+            subprocess.run(["bash", "-n", str(sh)], check=True)
 
 
 @unittest.skipUnless(

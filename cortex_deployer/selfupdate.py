@@ -6,6 +6,7 @@ import json
 import os
 import shutil
 import subprocess
+import sys
 from pathlib import Path
 from typing import Any
 
@@ -73,6 +74,43 @@ def _uv_bin() -> Path | None:
     return Path(found) if found else None
 
 
+def config_path() -> Path:
+    return home_dir() / "config.json"
+
+
+def load_config() -> dict[str, Any]:
+    path = config_path()
+    if not path.is_file():
+        return {}
+    try:
+        data = json.loads(path.read_text(encoding="utf-8"))
+    except (OSError, ValueError):
+        return {}
+    return data if isinstance(data, dict) else {}
+
+
+def save_config(patch: dict[str, Any]) -> dict[str, Any]:
+    cfg = load_config()
+    cfg.update(patch)
+    path = config_path()
+    path.parent.mkdir(parents=True, exist_ok=True)
+    path.write_text(json.dumps(cfg, indent=2) + "\n", encoding="utf-8")
+    return cfg
+
+
+def auto_update_enabled() -> bool:
+    env = os.environ.get("CORTEX_DEPLOYER_AUTO_UPDATE", "").strip().lower()
+    if env in {"1", "true", "yes"}:
+        return True
+    if env in {"0", "false", "no"}:
+        return False
+    return bool(load_config().get("auto_update"))
+
+
+def set_auto_update(on: bool) -> None:
+    save_config({"auto_update": bool(on)})
+
+
 def latest_from_catalog(cat: dict[str, Any] | None) -> str:
     rel = (cat or {}).get("deployer_release") or {}
     return str(rel.get("version") or "").strip()
@@ -83,32 +121,41 @@ def tarball_from_catalog(cat: dict[str, Any] | None) -> str:
     return str(rel.get("tarball") or "").strip() or DEFAULT_TARBALL
 
 
+def _version_tuple(s: str) -> tuple[int, ...]:
+    nums: list[int] = []
+    for part in str(s).split("."):
+        digits = ""
+        for ch in part:
+            if ch.isdigit():
+                digits += ch
+            else:
+                break
+        nums.append(int(digits or 0))
+    return tuple(nums or (0,))
+
+
 def update_available(latest: str) -> bool:
+    """True only when catalog is a newer dotted version (never downgrade)."""
     if not latest:
         return False
-    return latest != __version__
+    return _version_tuple(latest) > _version_tuple(__version__)
+
+
+def _update_cmd(tarball: str) -> list[str]:
+    uv = _uv_bin()
+    py = _venv_python()
+    if uv is not None and py.is_file():
+        return [str(uv), "pip", "install", "--python", str(py), "--upgrade", tarball]
+    return [sys.executable, "-m", "pip", "install", "--upgrade", tarball]
 
 
 def run_update(tarball: str = "") -> dict[str, Any]:
-    """In-process pip install. For the CLI when the server is not holding files."""
-    uv = _uv_bin()
-    py = _venv_python()
-    if uv is None:
-        raise RuntimeError(
-            "isolated uv not found; re-run https://cortex.shizuha.com/deployer/install.sh"
-        )
-    if not py.is_file():
-        raise RuntimeError(f"venv python missing: {py}")
+    """In-process pip install. Isolated venv if present, else this interpreter."""
     src = tarball or DEFAULT_TARBALL
+    cmd = _update_cmd(src)
     env = os.environ.copy()
     env["UV_PYTHON_PREFERENCE"] = "only-managed"
-    proc = subprocess.run(
-        [str(uv), "pip", "install", "--python", str(py), "--upgrade", src],
-        check=False,
-        capture_output=True,
-        text=True,
-        env=env,
-    )
+    proc = subprocess.run(cmd, check=False, capture_output=True, text=True, env=env)
     if proc.returncode != 0:
         err = (proc.stderr or proc.stdout or "update failed").strip()
         raise RuntimeError(err[-800:])
@@ -118,6 +165,38 @@ def run_update(tarball: str = "") -> dict[str, Any]:
         "restart_required": True,
         "detail": (proc.stdout or "").strip()[-400:],
     }
+
+
+def apply_on_start(*, auto: bool, host: str, port: int) -> None:
+    """Print or apply a catalog update before the server binds.
+
+    Re-exec is one-shot (CORTEX_DEPLOYER_UPDATED) so a no-op pip cannot loop.
+    Never raises — a catalog/network miss must not block listen.
+    """
+    if os.environ.get("CORTEX_DEPLOYER_UPDATED") == "1":
+        return
+    try:
+        from . import catalog
+
+        cat = catalog.fetch_catalog(force=True, timeout=5.0)
+        latest = latest_from_catalog(cat)
+        if not update_available(latest):
+            return
+        if not auto:
+            print(
+                f"update available  {__version__} → {latest}  ·  cortex-deployer update",
+                flush=True,
+            )
+            return
+        print(f"auto-update  {__version__} → {latest}", flush=True)
+        run_update(tarball_from_catalog(cat))
+        os.environ["CORTEX_DEPLOYER_UPDATED"] = "1"
+        os.execv(
+            sys.executable,
+            [sys.executable, "-m", "cortex_deployer", "server", "--host", host, "--port", str(port)],
+        )
+    except Exception as exc:
+        print(f"auto-update skipped: {exc}", file=sys.stderr, flush=True)
 
 
 def write_updater_files(tarball: str, host: str, port: int) -> tuple[Path, Path]:

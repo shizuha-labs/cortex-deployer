@@ -39,8 +39,17 @@ class CliTests(unittest.TestCase):
         from cortex_deployer.cli import build_parser
 
         parser = build_parser()
-        args = parser.parse_args(["update"])
+        args = parser.parse_args(["update", "--check"])
         self.assertEqual(args.command, "update")
+        self.assertTrue(args.check)
+        args = parser.parse_args(["upgrade", "--restart"])
+        self.assertEqual(args.command, "upgrade")
+        self.assertTrue(args.restart)
+        args = parser.parse_args(["server", "--auto-update"])
+        self.assertTrue(args.auto_update)
+        args = parser.parse_args(["auto-update", "--off"])
+        self.assertEqual(args.command, "auto-update")
+        self.assertTrue(args.off)
 
     def test_recommend_cli(self):
         buf = io.StringIO()

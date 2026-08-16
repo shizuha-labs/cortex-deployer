@@ -4,7 +4,7 @@
   "source": "https://cortex.shizuha.com/deployer/catalog.json",
   "notes": "Curated hardware × model × quant. min_vram_mb includes weights + KV at the listed ctx + Windows display/CUDA headroom. Live 16 GB 5080 (2026-08-17): 27B Q2 fills the card at 8k ctx; 27B Q3 is not a 16 GB pick. 16 GB agentic default is a smaller model with 64k+ ctx.",
   "deployer_release": {
-    "version": "0.3.9",
+    "version": "0.3.10",
     "tarball": "https://github.com/shizuha-labs/cortex-deployer/archive/refs/heads/main.tar.gz"
   },
   "hardware_tiers": [

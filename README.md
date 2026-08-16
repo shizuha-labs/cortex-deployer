@@ -11,7 +11,7 @@ cortex-deployer server
 # open http://127.0.0.1:7480  →  Choose a Qwen build
 ```
 
-The installer does **not** use the OS `pip` (Debian/Ubuntu PEP 668). It bootstraps an isolated `uv` + CPython under `~/.cortex-deployer` and puts a wrapper on `~/.local/bin`. Re-running it upgrades the app in place and **keeps** `~/.cortex-deployer/models`. After 0.3.6 the running UI can also **Update Deployer** / **Refresh catalog** without a reinstall.
+The installer does **not** use the OS `pip` (Debian/Ubuntu PEP 668). It bootstraps an isolated `uv` + CPython under `~/.cortex-deployer` and puts a wrapper on `~/.local/bin`. After that, **never reinstall** — run `cortex-deployer update`, `cortex-deployer auto-update`, or `curl -fsSL https://cortex.shizuha.com/deployer/update.sh | bash`. Models stay. The UI **Update Deployer** button does the same.
 
 Windows PowerShell:
 
@@ -39,7 +39,7 @@ Engines: **llama.cpp**, **SGLang**, **vLLM**, **MLX**.
 
 ## Windows + RTX 5080 (Qwen3.8-27B)
 
-16 GB cards use **Q3** (`UD-Q3_K_XL` ~13.4 GB). Q4 is marked tight/skip.
+16 GB cards: **Qwen3.5-9B Q6 @ 64k** is the agentic default. 27B only fits as Q2 at 8k; Q3/Q4 27B do not.
 
 1. NVIDIA Game Ready / Studio driver (the only host install).
 2. In PowerShell:
@@ -51,7 +51,7 @@ cortex-deployer server
 
 3. Open http://127.0.0.1:7480 and click **Choose a Qwen build**.
 
-The picker shows every Qwen3.8-27B quant from [cortex.shizuha.com/deployer](https://cortex.shizuha.com/deployer). On a 16 GB 5080, **Q3 is recommended**, Q2 is the fallback, Q4 is marked won't-fit. Picking one:
+The picker lists every catalog model that fits. On a 16 GB 5080 the recommended pick is **Qwen3.5-9B UD-Q6 @ 64k**; 27B Q2 is the only 27B option. Picking one:
 
 - downloads official `llama.cpp` **Windows CUDA 13** + matching CUDA DLLs
 - pulls that Unsloth GGUF
@@ -69,7 +69,12 @@ State lives in `%USERPROFILE%\.cortex-deployer\` (override with `CORTEX_DEPLOYER
 cortex-deployer server --host 127.0.0.1 --port 7480   # also: up, web
 # if 7480 is excluded/busy (common on Windows), the next free high port is used
 # llama-server defaults to 8080; if that port is excluded/busy the next free one is used
-cortex-deployer update                                # pull GitHub main into the isolated venv
+cortex-deployer update                                # in-place; keeps models
+cortex-deployer update --check                        # exit 2 if a newer catalog release exists
+cortex-deployer update --restart                      # upgrade then exec server
+cortex-deployer auto-update                           # persist upgrade-on-start, then update now
+cortex-deployer auto-update --off                     # stop checking on start
+cortex-deployer server --auto-update                  # same persist + apply if catalog is newer
 cortex-deployer setup                                 # one-click recommended Qwen
 cortex-deployer recommend
 cortex-deployer download --repo unsloth/Qwen3.8-27B-GGUF --glob '*UD-Q3_K_XL.gguf'

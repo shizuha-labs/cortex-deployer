@@ -25,6 +25,8 @@ class SelfUpdateTests(unittest.TestCase):
         self.assertTrue(selfupdate.update_available("9.9.9"))
         self.assertFalse(selfupdate.update_available(__version__))
         self.assertFalse(selfupdate.update_available(""))
+        self.assertFalse(selfupdate.update_available("0.0.1"))
+        self.assertFalse(selfupdate.update_available("0.3.9"))
 
     def test_write_updater_files(self):
         tmp = tempfile.TemporaryDirectory()
@@ -51,3 +53,26 @@ class SelfUpdateTests(unittest.TestCase):
         self.assertIn("pip", text)
         self.assertIn("cortex_deployer", text)
         compile(text, str(script), "exec")
+
+    def test_update_cmd_falls_back_to_pip(self):
+        os.environ["CORTEX_DEPLOYER_HOME"] = "/tmp/cd-no-venv-here"
+        self.addCleanup(lambda: os.environ.pop("CORTEX_DEPLOYER_HOME", None))
+        cmd = selfupdate._update_cmd(selfupdate.DEFAULT_TARBALL)
+        self.assertEqual(cmd[1:4], ["-m", "pip", "install"])
+
+    def test_auto_update_persist(self):
+        tmp = tempfile.TemporaryDirectory()
+        self.addCleanup(tmp.cleanup)
+        os.environ["CORTEX_DEPLOYER_HOME"] = tmp.name
+        self.addCleanup(lambda: os.environ.pop("CORTEX_DEPLOYER_HOME", None))
+        os.environ.pop("CORTEX_DEPLOYER_AUTO_UPDATE", None)
+        self.assertFalse(selfupdate.auto_update_enabled())
+        selfupdate.set_auto_update(True)
+        self.assertTrue(selfupdate.auto_update_enabled())
+        saved = json.loads((Path(tmp.name) / "config.json").read_text(encoding="utf-8"))
+        self.assertTrue(saved["auto_update"])
+        selfupdate.set_auto_update(False)
+        self.assertFalse(selfupdate.auto_update_enabled())
+        os.environ["CORTEX_DEPLOYER_AUTO_UPDATE"] = "1"
+        self.addCleanup(lambda: os.environ.pop("CORTEX_DEPLOYER_AUTO_UPDATE", None))
+        self.assertTrue(selfupdate.auto_update_enabled())

@@ -42,10 +42,15 @@ Info "standalone CPython $PyVersion (not the OS interpreter)"
 
 $venv = Join-Path $Prefix "venv"
 Info "venv $venv"
-& $uv venv $venv --python $PyVersion --clear
+$venvPy = Join-Path $venv "Scripts\python.exe"
+if (Test-Path $venvPy) {
+  Info "existing venv — upgrade in place (models stay)"
+} else {
+  & $uv venv $venv --python $PyVersion
+}
 
 Info "install cortex-deployer into the venv"
-& $uv pip install --python (Join-Path $venv "Scripts\python.exe") $Tarball
+& $uv pip install --python $venvPy --upgrade $Tarball
 
 $exe = Join-Path $venv "Scripts\cortex-deployer.exe"
 if (-not (Test-Path $exe)) { throw "venv is missing cortex-deployer.exe after install" }
@@ -72,5 +77,7 @@ Write-Host "  # http://127.0.0.1:7480  ->  Choose a Qwen build"
 Write-Host ""
 Write-Host "NVIDIA Game Ready / Studio driver is the only extra host install."
 Write-Host "The app fetches official llama.cpp CUDA 13 builds and the GGUF."
-Write-Host "Re-run this installer to upgrade. Models under $Prefix\models stay."
-Write-Host "If cortex-deployer server is running, stop it (Ctrl+C) and start it again."
+Write-Host "Later upgrades (no reinstall):  cortex-deployer update"
+Write-Host "                                irm https://cortex.shizuha.com/deployer/update.ps1 | iex"
+Write-Host "Auto on start:                  cortex-deployer auto-update"
+Write-Host "Models under $Prefix\models stay."
