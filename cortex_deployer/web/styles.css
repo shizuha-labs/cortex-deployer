@@ -71,6 +71,8 @@ dialog label { display: block; margin: 10px 0; font-size: 12px; color: var(--mut
 dialog input, dialog select, #chat-model { width: 100%; margin-top: 4px; }
 .dlg-actions { display: flex; justify-content: flex-end; gap: 8px; margin-top: 14px; }
 .err { color: var(--bad); min-height: 1.2em; }
+.pick-model { margin: 14px 0 18px; }
+.pick-model-head { display: flex; gap: 8px; align-items: baseline; }
 .pick-card {
   display: flex; justify-content: space-between; gap: 12px; align-items: flex-start;
   border: 1px solid var(--line); border-radius: 8px; padding: 10px 12px; margin: 8px 0;

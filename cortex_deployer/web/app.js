@@ -46,7 +46,7 @@ function render(backends) {
     <div class="stat"><b>${backends.filter((b) => b.state === "running" || b.healthy).length}</b><span>live</span></div>
   `;
   if (!backends.length) {
-    rowsEl.innerHTML = '<tr><td colspan="6" class="empty">No backends yet. Click <b>Choose a Qwen build</b> — pick a quant; live VRAM marks one as recommended.</td></tr>';
+    rowsEl.innerHTML = '<tr><td colspan="6" class="empty">No backends yet. Click <b>Choose a build</b> — pick a model/quant; live VRAM marks one as recommended.</td></tr>';
     return;
   }
   rowsEl.innerHTML = backends.map((b) => `
@@ -143,7 +143,7 @@ async function loadRecipes() {
   ).join("");
   if (data.best) recipeSel.value = data.best;
   const vram = data.vram_mb ? `${data.vram_mb} MB NVIDIA` : (data.apple ? "Apple Silicon" : "no dedicated NVIDIA VRAM");
-  fitline.textContent = `GPU fit: ${vram}. Recommended recipe: ${data.best || "none"}. A 16 GB card should use Q3, not Q4.`;
+  fitline.textContent = `GPU fit: ${vram}. Catalog pick: ${data.best || "none"}. 16 GB: 9B/14B at 64k for agents; 27B Q2 only if you want the dense 27B.`;
   paintRecipeNote();
 }
 
@@ -206,26 +206,39 @@ document.getElementById("btn-update").onclick = async () => {
 document.getElementById("btn-deploy").onclick = () => { document.getElementById("deploy-err").textContent = ""; deployDlg.showModal(); };
 document.getElementById("ctx").addEventListener("input", () => { document.getElementById("ctx").dataset.touched = "1"; });
 
+function quantCard(q, recd) {
+  const skip = q.fit === "skip";
+  const fit = q.fit === "recommended" ? "pick" : (q.fit === "ok" ? "fits" : q.fit);
+  return `<div class="pick-card ${recd ? "rec" : ""} ${skip ? "skip" : ""}">
+    <div>
+      <strong>${esc(q.quant)}</strong> ${recd ? '<span class="muted">recommended</span>' : ""}
+      <div class="muted">${esc(fit)} · ≥${q.min_vram_mb || 0} MB · ${q.weight_gb || "?"} GB · ctx ${q.context_length || "—"}</div>
+      <div class="muted">${esc(q.notes || "")}</div>
+    </div>
+    <button class="primary" data-recipe="${esc(q.recipe || "")}" ${skip ? "disabled" : ""}>${skip ? "won't fit" : "Use this"}</button>
+  </div>`;
+}
+
 async function openPicker() {
   const rec = await api("/api/recommend");
   const live = document.getElementById("pick-live");
   const gpu = rec.vram_mb ? `${rec.vram_mb} MB NVIDIA` : (rec.apple ? "Apple Silicon" : "no NVIDIA VRAM detected");
-  live.textContent = `Live: ${gpu}. Recommended from catalog${rec.catalog_live ? " (live)" : ""}: ${rec.best || "none"}.`;
-  const qwen = (rec.models || []).find((m) => m.id === "qwen3.8-27b") || { quants: [] };
+  live.textContent = `Live: ${gpu}. Catalog pick${rec.catalog_live ? " (live)" : ""}: ${rec.best || "none"}.`;
   const box = document.getElementById("pick-rows");
-  box.innerHTML = (qwen.quants || []).map((q) => {
-    const recd = q.id === qwen.recommended_quant || q.recipe === qwen.recommended_recipe;
-    const skip = q.fit === "skip";
-    const fit = q.fit === "recommended" ? "pick" : (q.fit === "ok" ? "fits" : q.fit);
-    return `<div class="pick-card ${recd ? "rec" : ""} ${skip ? "skip" : ""}">
-      <div>
-        <strong>${esc(q.quant)}</strong> ${recd ? '<span class="muted">recommended</span>' : ""}
-        <div class="muted">${esc(fit)} · ≥${q.min_vram_mb || 0} MB · ${q.weight_gb || "?"} GB · ctx ${q.context_length || "—"}</div>
-        <div class="muted">${esc(q.notes || "")}</div>
+  const models = rec.models || [];
+  box.innerHTML = models.map((model) => {
+    const cards = (model.quants || []).map((q) =>
+      quantCard(q, q.id === model.recommended_quant || q.recipe === model.recommended_recipe)
+    ).join("");
+    return `<div class="pick-model">
+      <div class="pick-model-head">
+        <strong>${esc(model.name)}</strong>
+        <span class="muted">${esc(model.params || "")}${model.role ? " · " + esc(model.role) : ""}</span>
       </div>
-      <button class="primary" data-recipe="${esc(q.recipe || "")}" ${skip ? "disabled" : ""}>${skip ? "won't fit" : "Use this"}</button>
+      <div class="muted" style="margin:4px 0 8px">${esc(model.summary || "")}</div>
+      ${cards}
     </div>`;
-  }).join("") || '<p class="muted">No Qwen quants in catalog.</p>';
+  }).join("") || '<p class="muted">No models in catalog.</p>';
   document.getElementById("pick-dlg").showModal();
 }
 

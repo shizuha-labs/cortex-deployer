@@ -1,23 +1,23 @@
 schema_version: deployer.recipe.v1
-name: qwen38-27b-llamacpp
+name: qwen3-14b-q4-llamacpp
 engine: llamacpp
 executor: process
 quant: UD-Q4_K_XL
-min_vram_mb: 24000
-notes: Unsloth 17–19 GB floor. 24 GB class only.
+min_vram_mb: 13500
+notes: 16 GB 14B agentic pick. 64k ctx.
 download_glob: "*UD-Q4_K_XL.gguf"
 model:
-  id: Qwen3.8-27B-Q4
-  served_name: Qwen3.8-27B-Q4
+  id: Qwen3-14B-Q4
+  served_name: Qwen3-14B-Q4
   source:
     kind: huggingface
-    repo: unsloth/Qwen3.8-27B-GGUF
-    filename: Qwen3.8-27B-UD-Q4_K_XL.gguf
+    repo: unsloth/Qwen3-14B-GGUF
+    filename: Qwen3-14B-UD-Q4_K_XL.gguf
     path: ""
 launch:
   host: 127.0.0.1
   port: 8080
-  context_length: 32768
+  context_length: 65536
   extra_args:
     - --n-gpu-layers
     - "99"
@@ -25,5 +25,5 @@ launch:
     - "1"
 connect:
   aliases:
-    - Qwen3.8-27B-Q4
+    - Qwen3-14B-Q4
   max_concurrent: 1

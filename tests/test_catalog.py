@@ -14,6 +14,8 @@ class CatalogTests(unittest.TestCase):
         self.assertEqual(cat["schema"], "cortex.deployer.catalog.v1")
         ids = {m["id"] for m in cat["models"]}
         self.assertIn("qwen3.8-27b", ids)
+        self.assertIn("qwen3.5-9b", ids)
+        self.assertIn("qwen3-14b", ids)
         rel = cat.get("deployer_release") or {}
         self.assertTrue(rel.get("version"))
         self.assertIn("tarball", rel)
