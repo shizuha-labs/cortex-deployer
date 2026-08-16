@@ -46,7 +46,7 @@ function render(backends) {
     <div class="stat"><b>${backends.filter((b) => b.state === "running" || b.healthy).length}</b><span>live</span></div>
   `;
   if (!backends.length) {
-    rowsEl.innerHTML = '<tr><td colspan="6" class="empty">No backends yet. Click <b>Set up recommended Qwen</b> — quant, llama-server, weights, and start are automatic.</td></tr>';
+    rowsEl.innerHTML = '<tr><td colspan="6" class="empty">No backends yet. Click <b>Choose a Qwen build</b> — pick a quant; live VRAM marks one as recommended.</td></tr>';
     return;
   }
   rowsEl.innerHTML = backends.map((b) => `
@@ -127,7 +127,7 @@ async function refresh() {
     if (llama) {
       binwarn.textContent = "";
     } else {
-      binwarn.textContent = "llama-server not found yet — Set up recommended Qwen installs the official CUDA build automatically.";
+      binwarn.textContent = "llama-server not found yet — choosing a build installs the official CUDA binary automatically.";
     }
   }
   render(list.backends || []);
@@ -151,13 +151,38 @@ document.getElementById("btn-refresh").onclick = () => refresh().catch(console.e
 document.getElementById("btn-deploy").onclick = () => { document.getElementById("deploy-err").textContent = ""; deployDlg.showModal(); };
 document.getElementById("ctx").addEventListener("input", () => { document.getElementById("ctx").dataset.touched = "1"; });
 
-async function runSetup() {
+async function openPicker() {
+  const rec = await api("/api/recommend");
+  const live = document.getElementById("pick-live");
+  const gpu = rec.vram_mb ? `${rec.vram_mb} MB NVIDIA` : (rec.apple ? "Apple Silicon" : "no NVIDIA VRAM detected");
+  live.textContent = `Live: ${gpu}. Recommended from catalog${rec.catalog_live ? " (live)" : ""}: ${rec.best || "none"}.`;
+  const qwen = (rec.models || []).find((m) => m.id === "qwen3.8-27b") || { quants: [] };
+  const box = document.getElementById("pick-rows");
+  box.innerHTML = (qwen.quants || []).map((q) => {
+    const recd = q.recipe === rec.best || q.id === qwen.recommended_quant;
+    const skip = q.fit === "skip";
+    return `<div class="pick-card ${recd ? "rec" : ""} ${skip ? "skip" : ""}">
+      <div>
+        <strong>${esc(q.quant)}</strong> ${recd ? '<span class="muted">recommended</span>' : ""}
+        <div class="muted">${esc(q.fit)} · ≥${q.min_vram_mb || 0} MB · ${q.weight_gb || "?"} GB · ctx ${q.context_length || "—"}</div>
+        <div class="muted">${esc(q.notes || "")}</div>
+      </div>
+      <button class="primary" data-recipe="${esc(q.recipe || "")}" ${skip ? "disabled" : ""}>${skip ? "won't fit" : "Use this"}</button>
+    </div>`;
+  }).join("") || '<p class="muted">No Qwen quants in catalog.</p>';
+  document.getElementById("pick-dlg").showModal();
+}
+
+async function runSetup(recipe) {
   const status = document.getElementById("setup-status");
   const btn = document.getElementById("btn-setup");
-  status.textContent = "starting…";
+  status.textContent = "starting " + (recipe || "recommended") + "…";
   btn.disabled = true;
   try {
-    const job = await api("/api/setup", { method: "POST", body: "{}" });
+    const job = await api("/api/setup", {
+      method: "POST",
+      body: JSON.stringify({ recipe: recipe || "" }),
+    });
     const tick = async () => {
       const cur = await api("/api/setup/" + job.id);
       if (cur.state === "done") {
@@ -180,7 +205,16 @@ async function runSetup() {
     btn.disabled = false;
   }
 }
-document.getElementById("btn-setup").onclick = () => runSetup();
+document.getElementById("btn-setup").onclick = () => openPicker().catch((e) => {
+  document.getElementById("setup-status").textContent = e.message;
+});
+document.getElementById("pick-cancel").onclick = () => document.getElementById("pick-dlg").close();
+document.getElementById("pick-rows").addEventListener("click", (ev) => {
+  const btn = ev.target.closest("button[data-recipe]");
+  if (!btn || btn.disabled) return;
+  document.getElementById("pick-dlg").close();
+  runSetup(btn.dataset.recipe);
+});
 document.getElementById("btn-adopt").onclick = () => { document.getElementById("adopt-err").textContent = ""; adoptDlg.showModal(); };
 document.getElementById("deploy-cancel").onclick = () => deployDlg.close();
 document.getElementById("adopt-cancel").onclick = () => adoptDlg.close();

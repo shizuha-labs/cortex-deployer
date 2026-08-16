@@ -1,0 +1,101 @@
+{
+  "schema": "cortex.deployer.catalog.v1",
+  "updated_at": "2026-08-16T16:00:00Z",
+  "source": "https://cortex.shizuha.com/deployer/catalog.json",
+  "notes": "Curated hardware × model × quant pairs for Cortex Deployer. Live GPU fit happens on the local app; this file is the shared recommendation source.",
+  "hardware_tiers": [
+    {
+      "id": "16gb",
+      "label": "16 GB NVIDIA",
+      "vram_mb": 16384,
+      "examples": ["RTX 5080", "RTX 4080 16GB", "RTX 4070 Ti Super"],
+      "recommend": { "qwen3.8-27b": "qwen38-27b-q3" }
+    },
+    {
+      "id": "24gb",
+      "label": "24 GB NVIDIA",
+      "vram_mb": 24576,
+      "examples": ["RTX 3090", "RTX 4090"],
+      "recommend": { "qwen3.8-27b": "qwen38-27b-q4" }
+    },
+    {
+      "id": "8gb",
+      "label": "8–12 GB NVIDIA",
+      "vram_mb": 8192,
+      "examples": ["RTX 3070", "RTX 4060"],
+      "recommend": { "qwen3.8-27b": "qwen38-27b-q2" }
+    },
+    {
+      "id": "apple",
+      "label": "Apple Silicon",
+      "vram_mb": 0,
+      "examples": ["M4 Max", "M3 Ultra"],
+      "recommend": { "qwen3.8-27b": "qwen38-27b-mlx" }
+    }
+  ],
+  "models": [
+    {
+      "id": "qwen3.8-27b",
+      "name": "Qwen3.8-27B",
+      "family": "qwen",
+      "params": "27B",
+      "context_native": 262144,
+      "summary": "Unsloth thinking+coding 27B. First-class Cortex Deployer recipe family. Pick quant from live VRAM — Q4 needs 24 GB, Q3 is the 16 GB 5080 pick.",
+      "docs": "https://cortex.shizuha.com/deployer/models/qwen3.8-27b",
+      "quants": [
+        {
+          "id": "qwen38-27b-q2",
+          "quant": "UD-Q2_K_XL",
+          "recipe": "qwen38-27b-q2-llamacpp.yaml",
+          "engine": "llamacpp",
+          "served_name": "Qwen3.8-27B-Q2",
+          "min_vram_mb": 9000,
+          "weight_gb": 10.7,
+          "context_length": 8192,
+          "download_repo": "unsloth/Qwen3.8-27B-GGUF",
+          "download_glob": "*UD-Q2_K_XL.gguf",
+          "notes": "Fits 8–12 GB. Quality drop vs Q3. Use only if Q3 OOMs."
+        },
+        {
+          "id": "qwen38-27b-q3",
+          "quant": "UD-Q3_K_XL",
+          "recipe": "qwen38-27b-q3-llamacpp.yaml",
+          "engine": "llamacpp",
+          "served_name": "Qwen3.8-27B-Q3",
+          "min_vram_mb": 14000,
+          "weight_gb": 13.4,
+          "context_length": 16384,
+          "download_repo": "unsloth/Qwen3.8-27B-GGUF",
+          "download_glob": "*UD-Q3_K_XL.gguf",
+          "notes": "Recommended on 16 GB Blackwell (RTX 5080). Q4 will not fit."
+        },
+        {
+          "id": "qwen38-27b-q4",
+          "quant": "UD-Q4_K_XL",
+          "recipe": "qwen38-27b-llamacpp.yaml",
+          "engine": "llamacpp",
+          "served_name": "Qwen3.8-27B-Q4",
+          "min_vram_mb": 22000,
+          "weight_gb": 17.9,
+          "context_length": 122880,
+          "download_repo": "unsloth/Qwen3.8-27B-GGUF",
+          "download_glob": "*UD-Q4_K_XL.gguf",
+          "notes": "Quality pick on 24 GB (RTX 3090 class). Skip on 16 GB."
+        },
+        {
+          "id": "qwen38-27b-mlx",
+          "quant": "mlx-8bit",
+          "recipe": "qwen38-27b-mlx.yaml",
+          "engine": "mlx",
+          "served_name": "Qwen3.8-27B-MLX",
+          "min_vram_mb": 0,
+          "weight_gb": 0,
+          "context_length": 262144,
+          "download_repo": "",
+          "download_glob": "",
+          "notes": "Apple Silicon only. Skip on NVIDIA."
+        }
+      ]
+    }
+  ]
+}
