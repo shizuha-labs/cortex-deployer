@@ -1,59 +1,54 @@
 # Cortex Deployer
 
-Deploy an OpenAI-compatible model on your own machine (llama.cpp, SGLang, vLLM, or MLX) and **connect it to a Cortex router** so it appears on the catalog.
+Local control plane for open models. One process, a browser UI, and an OpenAI-compatible endpoint — the same idea as `npx @deepseek-ai/dsh web`, aimed at **managing inference backends** the way [Cortex Backends](https://cortex.shizuha.com/cortex/backends) does for the fleet.
 
-This repository is the leaf. The Cortex router, admission, billing, and first-party fleet stay in the private `cortex` repo.
-
-## Install
+Windows, Linux, and macOS.
 
 ```bash
-pip install -e .
-cortex-deployer --help
+pip install git+https://github.com/shizuha-labs/cortex-deployer.git
+cortex-deployer server
+# open http://127.0.0.1:7480
 ```
 
-## Quick start
+Or from a checkout: `python -m cortex_deployer server`.
 
-Serve a local engine, then dial out to a Cortex gateway (no inbound port on your machine):
+## What you get
 
-```bash
-# 1) start whatever you already run locally
-#    llama-server / sglang / vllm / rapid-mlx — OpenAI /v1 on localhost
-
-# 2) announce it to Cortex
-cortex-deployer connect \
-  --gateway wss://cortex.example.com/cortex/deployer/ws/register \
-  --token "$CORTEX_DEPLOYER_TOKEN" \
-  --model My-Model \
-  --upstream http://127.0.0.1:8080/v1 \
-  --alias my-model
-```
-
-`connect` never invents a default token and never hard-codes a model alias. The pairing token comes from the Cortex UI.
-
-Render an engine command from a recipe without starting anything:
-
-```bash
-cortex-deployer render recipes/examples/llamacpp-cuda.yaml
-cortex-deployer engines
-```
-
-## Engines
-
-| Engine | Executor (v0.1) |
+| Surface | Role |
 |---|---|
-| `llamacpp` | process (`llama-server`) |
-| `sglang` | process (`python -m sglang.launch_server`) |
-| `vllm` | process (`python -m vllm.entrypoints.openai.api_server`) |
-| `mlx` | process (`rapid-mlx serve` or `mlx_lm.server`) |
+| Web UI `http://127.0.0.1:7480` | List / start / stop / register backends |
+| `GET/POST /api/backends` | Same data as the UI |
+| `GET /v1/models` · `POST /v1/chat/completions` | Fan-out to whatever is healthy locally |
+| `cortex-deployer connect` | Dial a Cortex router so the model shows up on the public catalog |
 
-Unsupported topology (for example SGLang multi-node) fails closed at render time.
+Engines: **llama.cpp**, **SGLang**, **vLLM**, **MLX**.
+
+## Windows + RTX 5080 (Qwen3.8-27B)
+
+1. Install Python 3.11+ and a CUDA `llama-server` on `PATH` (or set `CORTEX_DEPLOYER_LLAMA_SERVER` to the `.exe`).
+2. Download a GGUF that fits **16 GB**. Q4 (~18 GB) usually needs a 24 GB card or CPU offload. Prefer **UD-Q3_K_XL** (or Q3) first; drop to Q2 if VRAM still OOMs.
+3. `cortex-deployer server`
+4. Open the UI → **Deploy model** → recipe `qwen38-27b-llamacpp.yaml` → set **Weights path** to the GGUF → **Start**.
+5. When the row is healthy, `GET http://127.0.0.1:7480/v1/models` lists `Qwen3.8-27B-Q4` (or the name you typed).
+6. Optional: **Register URL** if `llama-server` is already running.
+
+State lives in `%USERPROFILE%\.cortex-deployer\` (override with `CORTEX_DEPLOYER_HOME`).
+
+## CLI
+
+```bash
+cortex-deployer server --host 127.0.0.1 --port 7480   # also: up, web
+cortex-deployer engines
+cortex-deployer recipes
+cortex-deployer render cortex_deployer/recipes/examples/llamacpp-cuda.yaml --json
+cortex-deployer connect --gateway wss://…/deployer/ws/register --token … --model … --upstream http://127.0.0.1:8080/v1
+```
+
+`connect` never invents a token.
 
 ## Repository fence
 
-Agent work lands on Origin **`shizuha-labs/cortex-deployer-beta`**.
-
-A leak-checked **tree import + merge commit** (never `git merge <beta-sha>`, never force-push) promotes the same files onto Origin **`shizuha-labs/cortex-deployer`**.
-
-GitHub `shizuha-labs/cortex-deployer` is a later merge-only hop from that fenced Origin repo. Beta commit objects must never be reachable from GitHub.
+Development: Origin `shizuha-labs/cortex-deployer-beta`.
+Public: GitHub `shizuha-labs/cortex-deployer` via leak-checked merge commits only.
 
 See `CONTRIBUTING.md` and `SECURITY.md`.

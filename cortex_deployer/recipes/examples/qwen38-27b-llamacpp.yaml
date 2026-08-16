@@ -1,0 +1,22 @@
+schema_version: deployer.recipe.v1
+name: qwen38-27b-llamacpp
+engine: llamacpp
+executor: process
+quant: Q4_K_M
+model:
+  id: Qwen3.8-27B-Q4
+  served_name: Qwen3.8-27B-Q4
+  source:
+    kind: local_path
+    path: /models/Qwen3.8-27B.gguf
+launch:
+  host: 127.0.0.1
+  port: 8080
+  context_length: 8192
+  extra_args:
+    - --n-gpu-layers
+    - "99"
+connect:
+  aliases:
+    - Qwen3.8-27B-Q4
+  max_concurrent: 1
