@@ -1,0 +1,29 @@
+schema_version: deployer.recipe.v1
+name: qwen3-8b-q4-llamacpp
+engine: llamacpp
+executor: process
+quant: UD-Q4_K_XL
+min_vram_mb: 6800
+notes: 8 GB full-GPU agentic. 40k ctx. Prefer this over squeezing a 27B.
+download_glob: "*UD-Q4_K_XL.gguf"
+model:
+  id: Qwen3-8B-Q4
+  served_name: Qwen3-8B-Q4
+  source:
+    kind: huggingface
+    repo: unsloth/Qwen3-8B-GGUF
+    filename: Qwen3-8B-UD-Q4_K_XL.gguf
+    path: ""
+launch:
+  host: 127.0.0.1
+  port: 8080
+  context_length: 40960
+  extra_args:
+    - --n-gpu-layers
+    - "99"
+    - -np
+    - "1"
+connect:
+  aliases:
+    - Qwen3-8B-Q4
+  max_concurrent: 1

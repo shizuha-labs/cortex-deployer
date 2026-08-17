@@ -1,0 +1,29 @@
+schema_version: deployer.recipe.v1
+name: qwen3-8b-q5-llamacpp
+engine: llamacpp
+executor: process
+quant: UD-Q5_K_XL
+min_vram_mb: 7800
+notes: 8 GB recommended agentic pick. 32k ctx, full GPU, no RAM offload.
+download_glob: "*UD-Q5_K_XL.gguf"
+model:
+  id: Qwen3-8B-Q5
+  served_name: Qwen3-8B-Q5
+  source:
+    kind: huggingface
+    repo: unsloth/Qwen3-8B-GGUF
+    filename: Qwen3-8B-UD-Q5_K_XL.gguf
+    path: ""
+launch:
+  host: 127.0.0.1
+  port: 8080
+  context_length: 32768
+  extra_args:
+    - --n-gpu-layers
+    - "99"
+    - -np
+    - "1"
+connect:
+  aliases:
+    - Qwen3-8B-Q5
+  max_concurrent: 1

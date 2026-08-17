@@ -6,6 +6,7 @@ from typing import Any
 
 from . import catalog as catalog_mod
 from . import hostinfo
+from .placement import annotate_quant, fit_label
 from .recipes import list_examples, load_recipe
 
 # Generic templates must not beat a real model recipe on the same card.
@@ -24,20 +25,6 @@ def nvidia_vram_mb(snap: dict[str, Any] | None = None) -> int:
     if nvs:
         return max(int(g.get("memory_mb") or 0) for g in nvs)
     return 0
-
-
-def fit_label(min_vram_mb: int, have_mb: int, *, apple: bool) -> str:
-    if min_vram_mb <= 0:
-        return "unknown"
-    if apple:
-        return "ok"
-    if have_mb <= 0:
-        return "cpu"
-    if have_mb >= min_vram_mb:
-        return "recommended"
-    if have_mb >= int(min_vram_mb * 0.72):
-        return "tight"
-    return "skip"
 
 
 def is_example_recipe(row: dict[str, Any], *, apple: bool) -> bool:
@@ -60,13 +47,9 @@ def recommend() -> dict[str, Any]:
     rows = []
     for path in list_examples():
         rec = load_recipe(path)
-        label = fit_label(rec.min_vram_mb, have, apple=apple)
-        if rec.engine == "mlx" and not apple:
-            label = "skip"
-        if rec.engine == "mlx" and apple:
-            label = "recommended"
+        label = fit_label(rec.min_vram_mb, have, apple=apple, engine=rec.engine)
         if rec.engine in {"vllm", "sglang"} and have < 8000 and not apple:
-            label = "tight" if have else "cpu"
+            label = "skip" if have < 6000 else "tight"
         row = {
             "file": path.name,
             "name": rec.name,
@@ -96,18 +79,15 @@ def recommend() -> dict[str, Any]:
         for quant in model.get("quants") or []:
             if not isinstance(quant, dict):
                 continue
-            item = dict(quant)
-            item["fit"] = fit_label(int(item.get("min_vram_mb") or 0), have, apple=apple)
-            if item.get("engine") == "mlx" and not apple:
-                item["fit"] = "skip"
-            if item.get("engine") == "mlx" and apple:
-                item["fit"] = "recommended"
-            quants.append(item)
+            quants.append(annotate_quant(quant, have, apple=apple))
         prefer = str(wanted.get(str(model.get("id") or "")) or "")
         pick = next((q for q in quants if q.get("id") == prefer), None)
-        if pick is None:
+        if pick is None or pick.get("fit") in {"skip", "cpu"}:
             fits = [q for q in quants if q.get("fit") == "recommended"]
             pick = max(fits, key=lambda q: int(q.get("min_vram_mb") or 0)) if fits else None
+        if pick is None:
+            offs = [q for q in quants if q.get("fit") == "offload"]
+            pick = min(offs, key=lambda q: int(q.get("min_vram_mb") or 0)) if offs else None
         for quant in quants:
             if (
                 quant.get("fit") == "recommended"
@@ -130,7 +110,7 @@ def recommend() -> dict[str, Any]:
         if model.get("recommended_quant") == default_id:
             default_recipe = str(model.get("recommended_recipe") or "")
             break
-    order = {"recommended": 0, "ok": 1, "tight": 2, "unknown": 3, "cpu": 4, "skip": 5}
+    order = {"recommended": 0, "ok": 1, "offload": 2, "tight": 3, "unknown": 4, "cpu": 5, "skip": 6}
     rows.sort(
         key=lambda r: (
             0 if default_recipe and r["file"] == default_recipe else 1,
@@ -172,4 +152,9 @@ def pick_tier(tiers: list[Any], have: int, *, apple: bool) -> dict[str, Any] | N
     nvs = [t for t in typed if int(t.get("vram_mb") or 0) > 0]
     if not nvs:
         return None
+    # Prefer the largest tier that the card actually has, so 8–12 GB
+    # does not snap to the 16 GB recommendations.
+    under = [t for t in nvs if int(t.get("vram_mb") or 0) <= have + 2048]
+    if under:
+        return max(under, key=lambda t: int(t.get("vram_mb") or 0))
     return min(nvs, key=lambda t: abs(int(t.get("vram_mb") or 0) - have))
