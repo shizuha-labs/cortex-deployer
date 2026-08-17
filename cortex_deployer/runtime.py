@@ -355,6 +355,17 @@ def deploy_from_spec(spec: dict[str, Any]) -> dict[str, Any]:
     if spec.get("served_name"):
         data["model"]["served_name"] = spec["served_name"]
         data["model"]["id"] = spec.get("model_id") or spec["served_name"]
+    if spec.get("extra_args") is None and recipe.engine == "llamacpp":
+        from . import hostinfo, recommend as recmod
+        from .placement import apply_ngl_args, fit_label
+
+        snap = hostinfo.snapshot()
+        have = recmod.nvidia_vram_mb(snap)
+        apple = any(g.get("vendor") == "apple" for g in snap.get("gpus") or [])
+        ctx = int(data["launch"]["context_length"] or 0)
+        fit = fit_label(recipe.min_vram_mb, have, apple=apple, engine=recipe.engine, context_length=ctx)
+        data["launch"]["extra_args"] = apply_ngl_args(data["launch"]["extra_args"], fit, ctx)
+        data["notes"] = f"placement={fit}"
     recipe = recipe_from_dict(data)
     launch = render_process(recipe)
     argv = list(launch.argv)

@@ -143,7 +143,7 @@ async function loadRecipes() {
   ).join("");
   if (data.best) recipeSel.value = data.best;
   const vram = data.vram_mb ? `${data.vram_mb} MB NVIDIA` : (data.apple ? "Apple Silicon" : "no dedicated NVIDIA VRAM");
-  fitline.textContent = `GPU fit: ${vram}. Catalog pick: ${data.best || "none"}. 16 GB: 9B/14B at 64k for agents; 27B Q2 only if you want the dense 27B.`;
+  fitline.textContent = `GPU fit: ${vram}. Catalog pick: ${data.best || "none"}. 8 GB: 8B Q5 full GPU; bigger models stay listed as GPU+RAM offload. 16 GB: 9B/14B at 64k.`;
   paintRecipeNote();
 }
 
@@ -207,15 +207,19 @@ document.getElementById("btn-deploy").onclick = () => { document.getElementById(
 document.getElementById("ctx").addEventListener("input", () => { document.getElementById("ctx").dataset.touched = "1"; });
 
 function quantCard(q, recd) {
-  const skip = q.fit === "skip";
+  const skip = q.fit === "skip" || q.fit === "cpu";
+  const offload = q.fit === "offload";
   const fit = q.fit === "recommended" ? "pick" : (q.fit === "ok" ? "fits" : q.fit);
-  return `<div class="pick-card ${recd ? "rec" : ""} ${skip ? "skip" : ""}">
+  const ram = q.min_ram_gb ? ` · ~${q.min_ram_gb} GB RAM` : "";
+  const action = skip ? "won't fit" : (offload ? "Use offload" : "Use this");
+  return `<div class="pick-card ${recd ? "rec" : ""} ${skip ? "skip" : ""} ${offload ? "offload" : ""}">
     <div>
       <strong>${esc(q.quant)}</strong> ${recd ? '<span class="muted">recommended</span>' : ""}
-      <div class="muted">${esc(fit)} · ≥${q.min_vram_mb || 0} MB · ${q.weight_gb || "?"} GB · ctx ${q.context_length || "—"}</div>
+      ${offload ? '<span class="muted"> · GPU+RAM</span>' : ""}
+      <div class="muted">${esc(fit)} · ≥${q.min_vram_mb || 0} MB VRAM${ram} · ${q.weight_gb || "?"} GB · ctx ${q.context_length || "—"}</div>
       <div class="muted">${esc(q.notes || "")}</div>
     </div>
-    <button class="primary" data-recipe="${esc(q.recipe || "")}" ${skip ? "disabled" : ""}>${skip ? "won't fit" : "Use this"}</button>
+    <button class="primary" data-recipe="${esc(q.recipe || "")}" ${skip ? "disabled" : ""}>${action}</button>
   </div>`;
 }
 

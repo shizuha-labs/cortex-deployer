@@ -79,6 +79,7 @@ dialog input, dialog select, #chat-model { width: 100%; margin-top: 4px; }
   background: var(--btn);
 }
 .pick-card.rec { border-color: #1c9b8e; }
+.pick-card.offload { border-color: #7c6bdb; }
 .pick-card.skip { opacity: 0.55; }
 .pick-card button { flex-shrink: 0; }
 pre {

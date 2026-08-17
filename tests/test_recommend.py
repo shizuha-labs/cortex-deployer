@@ -14,8 +14,9 @@ class RecommendTests(unittest.TestCase):
 
     def test_fit_labels(self):
         self.assertEqual(fit_label(14000, 16000, apple=False), "recommended")
-        self.assertEqual(fit_label(22000, 16000, apple=False), "tight")
-        self.assertEqual(fit_label(22000, 8000, apple=False), "skip")
+        self.assertEqual(fit_label(22000, 16000, apple=False), "offload")
+        self.assertEqual(fit_label(22000, 8000, apple=False), "offload")
+        self.assertEqual(fit_label(22000, 2000, apple=False), "skip")
         self.assertEqual(fit_label(14000, 0, apple=False), "cpu")
 
     def test_16gb_prefers_9b_longctx(self):
@@ -33,8 +34,8 @@ class RecommendTests(unittest.TestCase):
         qfits = {q["id"]: q["fit"] for q in qwen["quants"]}
         self.assertEqual(qwen["recommended_quant"], "qwen38-27b-q2")
         self.assertEqual(qfits["qwen38-27b-q2"], "recommended")
-        self.assertEqual(qfits["qwen38-27b-q3"], "tight")
-        self.assertEqual(qfits["qwen38-27b-q4"], "skip")
+        self.assertEqual(qfits["qwen38-27b-q3"], "offload")
+        self.assertEqual(qfits["qwen38-27b-q4"], "offload")
         nine = next(m for m in out["models"] if m["id"] == "qwen3.5-9b")
         self.assertEqual(nine["recommended_quant"], "qwen35-9b-q6")
         fourteen = next(m for m in out["models"] if m["id"] == "qwen3-14b")
@@ -42,7 +43,7 @@ class RecommendTests(unittest.TestCase):
         fits = {r["file"]: r["fit"] for r in out["recipes"]}
         self.assertEqual(fits["qwen35-9b-q6-llamacpp.yaml"], "recommended")
         self.assertEqual(fits["qwen38-27b-q2-llamacpp.yaml"], "ok")
-        self.assertIn(fits["qwen38-27b-q3-llamacpp.yaml"], {"tight", "skip"})
+        self.assertEqual(fits["qwen38-27b-q3-llamacpp.yaml"], "offload")
         self.assertNotEqual(out["best"], "sglang-openai.yaml")
         self.assertNotEqual(out["best"], "vllm-openai.yaml")
 
@@ -70,3 +71,27 @@ class RecommendTests(unittest.TestCase):
             out = recommend()
         self.assertTrue(out["apple"])
         self.assertEqual(out["best"], "qwen38-27b-mlx.yaml")
+
+    def test_8gb_full_gpu_8b_and_offload_rest(self):
+        snap = {
+            "gpus": [{"vendor": "nvidia", "memory_mb": 8192, "name": "RTX 4060"}],
+            "os": "Linux",
+        }
+        with patch("cortex_deployer.recommend.hostinfo.snapshot", return_value=snap):
+            out = recommend()
+        self.assertEqual(out["tier"], "8gb")
+        self.assertEqual(out["best"], "qwen3-8b-q5-llamacpp.yaml")
+        eight = next(m for m in out["models"] if m["id"] == "qwen3-8b")
+        self.assertEqual(eight["recommended_quant"], "qwen3-8b-q5")
+        nine = next(m for m in out["models"] if m["id"] == "qwen3.5-9b")
+        self.assertEqual(nine["recommended_quant"], "qwen35-9b-q4")
+        qfits = {q["id"]: q["fit"] for q in nine["quants"]}
+        self.assertEqual(qfits["qwen35-9b-q4"], "offload")
+        self.assertEqual(qfits["qwen35-9b-q5"], "offload")
+        qwen = next(m for m in out["models"] if m["id"] == "qwen3.8-27b")
+        q27 = {q["id"]: q["fit"] for q in qwen["quants"]}
+        self.assertEqual(q27["qwen38-27b-q2"], "offload")
+        self.assertNotEqual(q27["qwen38-27b-q2"], "skip")
+        fits = {r["file"]: r["fit"] for r in out["recipes"]}
+        self.assertEqual(fits["qwen3-8b-q5-llamacpp.yaml"], "recommended")
+        self.assertEqual(fits["qwen38-27b-q2-llamacpp.yaml"], "offload")
