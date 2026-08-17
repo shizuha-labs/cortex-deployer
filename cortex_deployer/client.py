@@ -33,6 +33,31 @@ DEFAULT_CONCURRENCY = 2
 
 SendFn = Callable[[dict], Awaitable[None]]
 
+# Connect is usually pointed at ``http://127.0.0.1:8014/v1``. Rapid-MLX
+# (and llama.cpp) publish Prometheus / health / slots on the *origin root*,
+# not under /v1. Cortex probes ``{base_url minus /v1}/metrics``.
+_ORIGIN_ROOT_PATHS = frozenset({
+    "/metrics",
+    "/health",
+    "/props",
+    "/slots",
+})
+
+
+def join_upstream(upstream: str, path: str) -> str:
+    """Join a proxied path onto the configured upstream.
+
+    ``/v1``-suffixed upstreams keep chat/completions under /v1, but
+    ``/metrics`` and friends are stripped back to the origin root so the
+    Cortex backends page can scrape Rapid-MLX / llama.cpp.
+    """
+    base = (upstream or "").rstrip("/")
+    p = path if str(path).startswith("/") else f"/{path}"
+    root = p.split("?", 1)[0].rstrip("/") or "/"
+    if root in _ORIGIN_ROOT_PATHS and base.endswith("/v1"):
+        base = base[:-3]
+    return base + p
+
 
 def _out_headers(resp: httpx.Response) -> dict[str, str]:
     return {k: v for k, v in resp.headers.items() if k.lower() != "content-length"}
@@ -51,7 +76,7 @@ async def relay_request(
     body = b64d(msg.get("body_b64", "")) if msg.get("body_b64") else None
     rid = str(msg.get("id") or "")
 
-    url = upstream.rstrip("/") + path
+    url = join_upstream(upstream, path)
     log.info("relay %s %s (%d bytes)", method, url, len(body or b""))
     try:
         async with client.stream(method, url, content=body, headers=headers) as resp:

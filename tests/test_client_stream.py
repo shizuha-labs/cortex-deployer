@@ -36,6 +36,26 @@ class FakeClient:
         return self._stream
 
 
+class JoinUpstreamTests(unittest.TestCase):
+    def test_chat_stays_under_v1(self):
+        self.assertEqual(
+            dc.join_upstream("http://127.0.0.1:8014/v1", "/chat/completions"),
+            "http://127.0.0.1:8014/v1/chat/completions",
+        )
+
+    def test_metrics_and_slots_use_origin_root(self):
+        base = "http://127.0.0.1:8014/v1"
+        self.assertEqual(dc.join_upstream(base, "/metrics"), "http://127.0.0.1:8014/metrics")
+        self.assertEqual(dc.join_upstream(base, "/slots"), "http://127.0.0.1:8014/slots")
+        self.assertEqual(dc.join_upstream(base, "/health"), "http://127.0.0.1:8014/health")
+
+    def test_already_root_upstream_is_unchanged(self):
+        self.assertEqual(
+            dc.join_upstream("http://127.0.0.1:8014", "/metrics"),
+            "http://127.0.0.1:8014/metrics",
+        )
+
+
 class RelayStreamTests(unittest.TestCase):
     def test_stream_emits_start_chunks_end(self):
         sent = []
