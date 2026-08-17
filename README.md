@@ -39,7 +39,7 @@ Engines: **llama.cpp**, **SGLang**, **vLLM**, **MLX**.
 
 ## Windows + RTX 5080 (Qwen3.8-27B)
 
-16 GB cards: **Qwen3.5-9B Q6 @ 64k** is the agentic default. 27B only fits as Q2 at 8k; Q3/Q4 27B do not.
+16 GB cards: **Qwen3.5-9B Q6 @ 64k** is the agentic default. 27B only fits fully as Q2 at 8k; Q3/Q4 stay listed as GPU+RAM offload. 8 GB cards get **Qwen3-8B Q5** full GPU, plus 9B/14B/27B as offload.
 
 1. NVIDIA Game Ready / Studio driver (the only host install).
 2. In PowerShell:
@@ -51,7 +51,7 @@ cortex-deployer server
 
 3. Open http://127.0.0.1:7480 and click **Choose a Qwen build**.
 
-The picker lists every catalog model that fits. On a 16 GB 5080 the recommended pick is **Qwen3.5-9B UD-Q6 @ 64k**; 27B Q2 is the only 27B option. Picking one:
+The picker lists every catalog model, including ones that need some layers in system RAM (`--fit`). On a 16 GB 5080 the recommended pick is **Qwen3.5-9B UD-Q6 @ 64k**; 27B Q2 is the full-GPU 27B option. Picking one:
 
 - downloads official `llama.cpp` **Windows CUDA 13** + matching CUDA DLLs
 - pulls that Unsloth GGUF
