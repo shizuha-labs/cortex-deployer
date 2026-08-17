@@ -9,6 +9,17 @@ Develop on Origin **`shizuha-labs/cortex-deployer-beta`** (`master`).
 
 Do **not** open feature PRs on Origin `cortex-deployer` or on GitHub. Those repos only receive leak-checked merge commits.
 
+## Public docs that must stay in lockstep
+
+After any user-facing change, update **all** of:
+
+- `README.md`, `docs/GETTING_STARTED.md`, `docs/EARN.md` (this repo)
+- https://cortex.shizuha.com/deployer , `/deployer/install`, `/deployer/earn`
+- wiki **How-to: Earn Hane with Cortex Deployer**
+
+Do not link staff-only surfaces (`/cortex/backends`) from public docs.
+Do not put pairing tokens, host inventory, or first-party recipes here.
+
 ## What belongs here
 
 Engine launchers, recipes for public models, the outbound connect client, the hello/inventory/stream protocol, the local CLI.
