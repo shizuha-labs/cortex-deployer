@@ -46,7 +46,7 @@ function render(backends) {
     <div class="stat"><b>${backends.filter((b) => b.state === "running" || b.healthy).length}</b><span>live</span></div>
   `;
   if (!backends.length) {
-    rowsEl.innerHTML = '<tr><td colspan="6" class="empty">No backends yet. Click <b>Choose a build</b> — pick a model/quant; live VRAM marks one as recommended.</td></tr>';
+    rowsEl.innerHTML = '<tr><td colspan="6" class="empty">No backends yet. <b>Attach local server</b> if LM Studio / Ollama / vLLM is already running, or <b>Choose a build</b> to start one here.</td></tr>';
     return;
   }
   rowsEl.innerHTML = backends.map((b) => `
@@ -288,9 +288,49 @@ document.getElementById("pick-rows").addEventListener("click", (ev) => {
   document.getElementById("pick-dlg").close();
   runSetup(btn.dataset.recipe);
 });
-document.getElementById("btn-adopt").onclick = () => { document.getElementById("adopt-err").textContent = ""; adoptDlg.showModal(); };
+document.getElementById("btn-adopt").onclick = () => {
+  document.getElementById("adopt-err").textContent = "";
+  document.getElementById("adopt-scan-out").textContent = "";
+  adoptDlg.showModal();
+};
 document.getElementById("deploy-cancel").onclick = () => deployDlg.close();
 document.getElementById("adopt-cancel").onclick = () => adoptDlg.close();
+document.getElementById("adopt-presets").addEventListener("click", (ev) => {
+  const btn = ev.target.closest("button[data-url]");
+  if (!btn) return;
+  document.getElementById("adopt-url").value = btn.dataset.url;
+});
+document.getElementById("adopt-scan").onclick = async () => {
+  const out = document.getElementById("adopt-scan-out");
+  const err = document.getElementById("adopt-err");
+  err.textContent = "";
+  out.textContent = "scanning…";
+  try {
+    const data = await api("/api/attach/scan");
+    const hits = data.hits || [];
+    if (!hits.length) {
+      out.textContent = "nothing on the usual ports (LM Studio 1234, Ollama 11434, vLLM 8000, llama.cpp 8080).";
+      return;
+    }
+    out.textContent = hits.map((h) => `${h.label} ${h.url} — ${(h.models || []).join(", ") || "up"}`).join(" · ");
+    document.getElementById("adopt-url").value = hits[0].url;
+    if (hits[0].models && hits[0].models[0] && !document.getElementById("adopt-name").value) {
+      document.getElementById("adopt-name").value = hits[0].models[0];
+    }
+  } catch (e) {
+    out.textContent = "";
+    err.textContent = e.message;
+  }
+};
+(async () => {
+  try {
+    const data = await api("/api/attach/presets");
+    const box = document.getElementById("adopt-presets");
+    box.innerHTML = (data.presets || []).map((p) =>
+      `<button type="button" class="ghost" data-url="${esc(p.urls[0])}">${esc(p.label)}</button>`
+    ).join("");
+  } catch { /* local UI still works without presets */ }
+})();
 document.getElementById("log-close").onclick = () => logDlg.close();
 document.getElementById("connect-cancel").onclick = () => connectDlg.close();
 recipeSel.onchange = paintRecipeNote;
@@ -382,12 +422,12 @@ document.getElementById("adopt-form").onsubmit = async (ev) => {
   const err = document.getElementById("adopt-err");
   err.textContent = "";
   try {
-    await api("/api/backends", {
+    await api("/api/attach", {
       method: "POST",
       body: JSON.stringify({
-        kind: "adopt",
-        model_id: document.getElementById("adopt-name").value,
-        base_url: document.getElementById("adopt-url").value,
+        url: document.getElementById("adopt-url").value,
+        model: document.getElementById("adopt-name").value,
+        api_key: document.getElementById("adopt-key").value,
       }),
     });
     adoptDlg.close();

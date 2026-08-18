@@ -17,7 +17,7 @@ from typing import Any
 from urllib.parse import urlparse
 from urllib.request import Request, urlopen
 
-from . import __version__, catalog, download, hostinfo, recommend, setup, store
+from . import __version__, attach, catalog, download, hostinfo, recommend, setup, store
 from . import connect_ctl
 from .recipes import list_examples, load_recipe
 from .runtime import (
@@ -197,6 +197,25 @@ def handle(method: str, path: str, body: bytes) -> tuple[int, bytes, str]:
         if job is None:
             return _json_bytes({"error": "not found"}, 404)
         return _json_bytes(job)
+    if method == "GET" and route == "/api/attach/presets":
+        return _json_bytes({"presets": list(attach.KNOWN_LOCAL)})
+    if method == "GET" and route == "/api/attach/scan":
+        return _json_bytes({"hits": attach.scan_local()})
+    if method == "POST" and route == "/api/attach":
+        if not isinstance(payload, dict):
+            return _json_bytes({"error": "object required"}, 400)
+        try:
+            backend = attach.attach(
+                str(payload.get("base_url") or payload.get("url") or ""),
+                model=str(payload.get("model_id") or payload.get("model") or ""),
+                api_key=str(payload.get("api_key") or ""),
+                engine=str(payload.get("engine") or ""),
+                name=str(payload.get("name") or ""),
+                require_probe=not bool(payload.get("force")),
+            )
+        except ValueError as exc:
+            return _json_bytes({"error": str(exc)}, 400)
+        return _json_bytes(backend, 201)
     if method == "GET" and route == "/api/backends":
         return _json_bytes({"backends": reconcile()})
     if method == "POST" and route == "/api/backends":
@@ -303,10 +322,14 @@ def _proxy_openai(payload: dict[str, Any]) -> tuple[int, bytes, str]:
     if target is None:
         return _json_bytes({"error": "no healthy backend for model"}, 404)
     base = _loopback_url(str(target.get("base_url") or "")).rstrip("/")
+    headers = {"content-type": "application/json"}
+    key = str(target.get("api_key") or "")
+    if key:
+        headers["authorization"] = "Bearer " + key
     req = Request(
         base + "/chat/completions",
         data=json.dumps(payload).encode("utf-8"),
-        headers={"content-type": "application/json"},
+        headers=headers,
         method="POST",
     )
     try:

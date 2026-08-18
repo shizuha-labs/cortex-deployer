@@ -14,11 +14,27 @@ Public walkthrough: https://cortex.shizuha.com/deployer/earn
 
 ## Path
 
-**Already serving?** You do not need Deployer. Sign in at
-https://cortex.shizuha.com/cortex/listings and paste your public
-`https://…/v1` URL, the catalog model name, and (optional) upstream
-API key. Cortex probes `/models` and a short completion. HTTPS only;
-localhost is rejected.
+Three ways in. Same Hane ledger.
+
+**Already have a public HTTPS `/v1`?** Sign in at
+https://cortex.shizuha.com/cortex/listings and paste it. Cortex probes
+`/models` and a short completion. HTTPS only; localhost is rejected.
+
+**Already serving locally (LM Studio / Ollama / vLLM / llama.cpp) and
+no public URL?** Deployer is the tunnel. It does not start a second
+engine — it attaches the one you have and opens an outbound WebSocket
+to Cortex Router:
+
+```bash
+cortex-deployer attach --scan
+cortex-deployer attach http://127.0.0.1:1234/v1          # LM Studio
+# cortex-deployer attach http://127.0.0.1:11434/v1       # Ollama
+# cortex-deployer attach http://127.0.0.1:8000/v1        # vLLM
+```
+
+Or open `http://127.0.0.1:7480` → **Attach local server**. Then
+**Cortex** on that row (pairing token from the Cortex UI). `connect`
+never invents a token.
 
 **Need a local recipe?** Then:
 

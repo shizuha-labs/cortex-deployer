@@ -48,6 +48,7 @@ class ServerTests(unittest.TestCase):
         self.assertIn("Choose a build", html)
         self.assertIn("Update Deployer", html)
         self.assertIn("Refresh catalog", html)
+        self.assertIn("Attach local server", html)
         self.assertNotIn("id=\"hf-token\"", html)
         self.assertNotIn("id=\"hf-box\"", html)
 
@@ -58,6 +59,27 @@ class ServerTests(unittest.TestCase):
         files = {r["file"] for r in rec["recipes"]}
         self.assertIn("qwen38-27b-llamacpp.yaml", files)
         self.assertIn("llamacpp-cuda.yaml", files)
+
+    def test_attach_presets_and_force(self):
+        status, presets = self._json("GET", "/api/attach/presets")
+        self.assertEqual(status, 200)
+        ids = {row["id"] for row in presets["presets"]}
+        self.assertTrue({"lmstudio", "ollama", "vllm"} <= ids)
+        status, err = self._json(
+            "POST",
+            "/api/attach",
+            {"url": "http://127.0.0.1:9/v1", "model": "nope"},
+        )
+        self.assertEqual(status, 400)
+        self.assertIn("nothing answering", err["error"])
+        status, created = self._json(
+            "POST",
+            "/api/attach",
+            {"url": "http://127.0.0.1:9/v1", "model": "forced", "force": True},
+        )
+        self.assertEqual(status, 201)
+        self.assertEqual(created["served_name"], "forced")
+        self.assertEqual(created["kind"], "adopt")
 
     def test_adopt_list_delete(self):
         _, created = self._json(

@@ -34,7 +34,20 @@ cortex-deployer server
 Open the URL it prints (usually `http://127.0.0.1:7480`). If `7480` is
 taken, the next free high port is used — trust the printed URL.
 
-## 3. Choose a build
+## 3. Attach a server you already run (optional)
+
+If LM Studio, Ollama, vLLM, or llama.cpp is already answering on this
+machine, do not start a second copy:
+
+```bash
+cortex-deployer attach --scan
+cortex-deployer attach http://127.0.0.1:1234/v1
+```
+
+The local UI **Attach local server** button is the same. Then skip to
+[EARN.md](EARN.md) to tunnel it to Cortex Router.
+
+## 4. Choose a build
 
 Click **Choose a Qwen build**. The picker:
 
@@ -54,7 +67,7 @@ cortex-deployer setup
 cortex-deployer setup --recipe qwen35-9b-q6-llamacpp
 ```
 
-## 4. Call it like OpenAI
+## 5. Call it like OpenAI
 
 ```bash
 curl http://127.0.0.1:7480/v1/models
@@ -66,7 +79,7 @@ curl http://127.0.0.1:7480/v1/chat/completions \
 Any OpenAI-compatible SDK works with `base_url=http://127.0.0.1:7480/v1`.
 No API key is required for local traffic.
 
-## 5. Stay current
+## 6. Stay current
 
 ```bash
 cortex-deployer update          # keeps models

@@ -38,11 +38,16 @@ def start_connect(backend_id: str, gateway: str, token: str, model: str = "") ->
         "--upstream",
         upstream,
     ]
+    env = os.environ.copy()
+    key = str(backend.get("api_key") or "")
+    if key:
+        env["CORTEX_DEPLOYER_UPSTREAM_KEY"] = key
     kw: dict[str, Any] = {
         "args": argv,
         "stdout": log_f,
         "stderr": subprocess.STDOUT,
         "stdin": subprocess.DEVNULL,
+        "env": env,
     }
     if os.name == "nt":
         kw["creationflags"] = getattr(subprocess, "CREATE_NEW_PROCESS_GROUP", 0)
