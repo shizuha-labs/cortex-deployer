@@ -96,3 +96,41 @@ class EngineTests(unittest.TestCase):
         self.assertIn("--hybrid-cache-entries", launch.argv)
         self.assertIn("8", launch.argv)
         self.assertIn("--pin-system-prompt", launch.argv)
+
+    def test_mlx_lm_server_argv_does_not_inject_rapid_serve(self):
+        recipe = _recipe(
+            engine="mlx",
+            model={
+                "id": "qwen3.8-27b",
+                "served_name": "qwen3.8-27b",
+                "source": {"kind": "local_path", "path": "/models/Qwen3.8-27B-8bit"},
+            },
+            launch={
+                "host": "127.0.0.1",
+                "port": 8015,
+                "extra_args": [
+                    "mlx_lm.server",
+                    "--max-tokens",
+                    "32768",
+                    "--decode-concurrency",
+                    "1",
+                ],
+            },
+        )
+        launch = render_process(recipe)
+        self.assertEqual(launch.argv[0], "mlx_lm.server")
+        self.assertNotIn("serve", launch.argv)
+        self.assertNotIn("--served-model-name", launch.argv)
+        self.assertEqual(
+            launch.argv[:6],
+            (
+                "mlx_lm.server",
+                "--model",
+                "/models/Qwen3.8-27B-8bit",
+                "--host",
+                "127.0.0.1",
+                "--port",
+            ),
+        )
+        self.assertIn("8015", launch.argv)
+        self.assertIn("--decode-concurrency", launch.argv)

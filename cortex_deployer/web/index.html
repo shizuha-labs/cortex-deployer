@@ -20,7 +20,7 @@
       <button id="btn-refresh" class="ghost">Refresh</button>
       <button id="btn-catalog" class="ghost">Refresh catalog</button>
       <button id="btn-update" class="ghost">Update Deployer</button>
-      <button id="btn-adopt" class="ghost">Register URL</button>
+      <button id="btn-adopt" class="ghost">Attach local server</button>
       <button id="btn-deploy" class="ghost">Deploy model</button>
       <button id="btn-setup" class="primary">Choose a build</button>
     </div>
@@ -121,16 +121,25 @@
 
   <dialog id="adopt-dlg">
     <form id="adopt-form" method="dialog">
-      <h3>Register existing server</h3>
-      <label>Model id
-        <input id="adopt-name" placeholder="Qwen3.8-27B-Q4" required />
-      </label>
+      <h3>Attach a running local server</h3>
+      <p class="muted">LM Studio, Ollama, vLLM, llama.cpp, SGLang — already serving? Deployer tunnels it to Cortex. No public URL required.</p>
+      <div id="adopt-presets" class="dlg-actions" style="justify-content:flex-start;flex-wrap:wrap;gap:8px;margin:8px 0 12px"></div>
       <label>Base URL
-        <input id="adopt-url" placeholder="http://127.0.0.1:8080/v1" required />
+        <input id="adopt-url" placeholder="http://127.0.0.1:1234/v1" required />
       </label>
+      <label>Model id <span class="muted">(blank = first /v1/models id)</span>
+        <input id="adopt-name" placeholder="qwen2.5-7b or llama3.2" />
+      </label>
+      <label>API key <span class="muted">(optional)</span>
+        <input id="adopt-key" type="password" autocomplete="off" />
+      </label>
+      <div class="dlg-actions" style="justify-content:flex-start">
+        <button type="button" class="ghost" id="adopt-scan">Scan this machine</button>
+      </div>
+      <p id="adopt-scan-out" class="muted"></p>
       <div class="dlg-actions">
         <button type="button" class="ghost" id="adopt-cancel">Cancel</button>
-        <button type="submit" class="primary">Register</button>
+        <button type="submit" class="primary">Attach</button>
       </div>
       <p id="adopt-err" class="err"></p>
     </form>

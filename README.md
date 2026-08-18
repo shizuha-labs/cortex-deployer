@@ -48,8 +48,8 @@ From a checkout: `python -m cortex_deployer server`.
 
 1. Install (above) and run `cortex-deployer server`.
 2. Open the printed URL (usually `http://127.0.0.1:7480`).
-3. Click **Choose a Qwen build**. The picker reads the live catalog and
-   marks a quant from this machine’s VRAM.
+3. Either **Attach local server** (LM Studio / Ollama / vLLM already
+   running — Deployer is only the tunnel) or **Choose a Qwen build**.
 4. Chat in the same page, or point any OpenAI-compatible client at
    `http://127.0.0.1:7480/v1`.
 5. To list on Cortex and earn Hane, follow
@@ -100,11 +100,15 @@ someone else’s request to their listing. Take-rate is **0% at launch**.
 Your own traffic to your own listing is unbilled.
 
 ```bash
+# already running LM Studio / Ollama / vLLM on this box?
+cortex-deployer attach --scan
+cortex-deployer attach http://127.0.0.1:1234/v1
+
 cortex-deployer connect \
   --gateway wss://cortex.shizuha.com/cortex/deployer/ws/register \
   --token <pairing from Cortex> \
   --model <served-name> \
-  --upstream http://127.0.0.1:7480/v1
+  --upstream http://127.0.0.1:1234/v1
 ```
 
 The local UI has a **Cortex** control on each running row. `connect`
@@ -139,6 +143,8 @@ cortex-deployer server --auto-update                  # same persist + apply if 
 cortex-deployer connect --auto-update …               # same, then re-exec connect only (engine stays)
 # Idle Rapid-MLX D-METAL-CAP recycle (never while requests_running>0):
 #   CORTEX_DEPLOYER_RECYCLE_CMD='launchctl kickstart -k gui/$UID/<engine-label>'
+cortex-deployer attach --scan                         # find LM Studio / Ollama / vLLM
+cortex-deployer attach http://127.0.0.1:1234/v1       # tunnel an existing local /v1
 cortex-deployer setup                                 # recommended Qwen
 cortex-deployer recommend
 cortex-deployer recipes

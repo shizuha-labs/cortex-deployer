@@ -36,6 +36,48 @@ class FakeClient:
         return self._stream
 
 
+class Metrics404SynthTests(unittest.TestCase):
+    def test_metrics_404_becomes_200(self):
+        sent = []
+
+        async def send(obj):
+            sent.append(obj)
+
+        fake = FakeStream([b"not found"], status=404, headers={"content-type": "text/plain"})
+        asyncio.run(
+            dc.relay_request(
+                FakeClient(fake),
+                "http://127.0.0.1:8016/v1",
+                {"id": "m1", "method": "GET", "path": "/metrics", "headers": {}},
+                send,
+            )
+        )
+        self.assertEqual(sent[0]["status"], 200)
+        self.assertIn(b"no /metrics", dc.b64d(sent[0]["body_b64"]))
+
+
+class AdvertiseModelsTests(unittest.TestCase):
+    def test_injects_served_name_first(self):
+        raw = json.dumps({"object": "list", "data": [{"id": "/models/x"}]}).encode()
+        out = json.loads(
+            dc._inject_advertised_models(raw, ["qwen3.8-27b", "Qwen3.8-27B-MLX"], 131072)
+        )
+        self.assertEqual(out["data"][0]["id"], "qwen3.8-27b")
+        self.assertEqual(out["data"][0]["context_window"], 131072)
+        self.assertEqual(out["data"][1]["id"], "Qwen3.8-27B-MLX")
+
+
+class RewriteModelTests(unittest.TestCase):
+    def test_rewrites_openai_model_field(self):
+        body = json.dumps({"model": "Qwen3.8-27B-MLX", "stream": True}).encode()
+        out = dc._rewrite_json_model(body, "default_model")
+        self.assertEqual(json.loads(out)["model"], "default_model")
+        self.assertTrue(json.loads(out)["stream"])
+
+    def test_leaves_non_json_alone(self):
+        self.assertEqual(dc._rewrite_json_model(b"not-json", "default_model"), b"not-json")
+
+
 class JoinUpstreamTests(unittest.TestCase):
     def test_chat_stays_under_v1(self):
         self.assertEqual(
