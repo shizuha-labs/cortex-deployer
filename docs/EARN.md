@@ -14,6 +14,14 @@ Public walkthrough: https://cortex.shizuha.com/deployer/earn
 
 ## Path
 
+**Already serving?** You do not need Deployer. Sign in at
+https://cortex.shizuha.com/cortex/listings and paste your public
+`https://…/v1` URL, the catalog model name, and (optional) upstream
+API key. Cortex probes `/models` and a short completion. HTTPS only;
+localhost is rejected.
+
+**Need a local recipe?** Then:
+
 1. **Install and serve locally** — [GETTING_STARTED.md](GETTING_STARTED.md).
    Chat on `127.0.0.1` first. If it does not answer `/v1/models` locally,
    it will not list.
