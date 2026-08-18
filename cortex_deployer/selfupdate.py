@@ -167,11 +167,24 @@ def run_update(tarball: str = "") -> dict[str, Any]:
     }
 
 
+def _maybe_catalog_update() -> str:
+    """Return the catalog tarball if a newer release exists, else ''."""
+    from . import catalog
+
+    cat = catalog.fetch_catalog(force=True, timeout=5.0)
+    latest = latest_from_catalog(cat)
+    if not update_available(latest):
+        return ""
+    print(f"auto-update  {__version__} → {latest}  (models stay)", flush=True)
+    return tarball_from_catalog(cat)
+
+
 def apply_on_start(*, auto: bool, host: str, port: int) -> None:
     """Print or apply a catalog update before the server binds.
 
     Re-exec is one-shot (CORTEX_DEPLOYER_UPDATED) so a no-op pip cannot loop.
     Never raises — a catalog/network miss must not block listen.
+    Never restarts ``cortex-deployer run`` / the engine process.
     """
     if os.environ.get("CORTEX_DEPLOYER_UPDATED") == "1":
         return
@@ -188,13 +201,36 @@ def apply_on_start(*, auto: bool, host: str, port: int) -> None:
                 flush=True,
             )
             return
-        print(f"auto-update  {__version__} → {latest}", flush=True)
+        print(f"auto-update  {__version__} → {latest}  (models stay)", flush=True)
         run_update(tarball_from_catalog(cat))
         os.environ["CORTEX_DEPLOYER_UPDATED"] = "1"
         os.execv(
             sys.executable,
             [sys.executable, "-m", "cortex_deployer", "server", "--host", host, "--port", str(port)],
         )
+    except Exception as exc:
+        print(f"auto-update skipped: {exc}", file=sys.stderr, flush=True)
+
+
+def apply_on_connect() -> None:
+    """Upgrade the isolated venv, then re-exec *connect* only.
+
+    The engine launched by ``cortex-deployer run`` (often via launchd
+    KeepAlive) is a different process and is not signalled. Gateway
+    linger covers the brief connect blip.
+    """
+    if os.environ.get("CORTEX_DEPLOYER_UPDATED") == "1":
+        return
+    if not auto_update_enabled():
+        return
+    try:
+        tarball = _maybe_catalog_update()
+        if not tarball:
+            return
+        run_update(tarball)
+        os.environ["CORTEX_DEPLOYER_UPDATED"] = "1"
+        argv = [sys.executable, "-m", "cortex_deployer", *sys.argv[1:]]
+        os.execv(sys.executable, argv)
     except Exception as exc:
         print(f"auto-update skipped: {exc}", file=sys.stderr, flush=True)
 

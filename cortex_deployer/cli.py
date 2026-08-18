@@ -52,6 +52,11 @@ def _cmd_render(args: argparse.Namespace) -> int:
 
 
 def _cmd_connect(args: argparse.Namespace) -> int:
+    from . import selfupdate
+
+    if getattr(args, "auto_update", False):
+        selfupdate.set_auto_update(True)
+    selfupdate.apply_on_connect()
     run_connect(args)
     return 0
 
