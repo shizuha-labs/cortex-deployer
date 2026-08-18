@@ -23,6 +23,16 @@ from .protocol import (
     response_frame,
     start_frame,
 )
+from .recycle import (
+    RecycleState,
+    cooldown_seconds,
+    min_hits,
+    parse_metrics,
+    poll_seconds,
+    recycle_cmd_from_env,
+    run_recycle_cmd,
+    should_recycle,
+)
 
 log = logging.getLogger("cortex-deployer")
 
@@ -148,6 +158,14 @@ async def run_once(args: argparse.Namespace) -> None:
             except Exception as exc:  # noqa: BLE001
                 log.warning("upstream /models probe failed: %s", exc)
 
+            recycle_task: asyncio.Task | None = None
+            recycle_cmd = recycle_cmd_from_env(getattr(args, "recycle_cmd", "") or "")
+            if recycle_cmd:
+                recycle_task = asyncio.create_task(
+                    _recycle_watch(client, args.upstream, recycle_cmd)
+                )
+                log.info("idle Metal-cap recycle armed cmd=%s", recycle_cmd)
+
             try:
                 async for raw in ws:
                     msg = json.loads(raw)
@@ -173,11 +191,53 @@ async def run_once(args: argparse.Namespace) -> None:
 
                     task.add_done_callback(_done)
             finally:
+                if recycle_task is not None:
+                    recycle_task.cancel()
+                    await asyncio.gather(recycle_task, return_exceptions=True)
                 for task in list(inflight):
                     task.cancel()
                 if inflight:
                     await asyncio.gather(*inflight, return_exceptions=True)
     log.info("disconnected from gateway")
+
+
+async def _recycle_watch(client: httpx.AsyncClient, upstream: str, cmd: str) -> None:
+    """Poll Rapid-MLX /metrics; recycle the engine only while idle-and-rejecting."""
+    state = RecycleState()
+    url = join_upstream(upstream, "/metrics")
+    interval = poll_seconds()
+    needed = min_hits()
+    cool = cooldown_seconds()
+    while True:
+        try:
+            resp = await client.get(url)
+            snap = parse_metrics(resp.text or "")
+            now = asyncio.get_running_loop().time()
+            fire, reason = should_recycle(
+                snap,
+                state,
+                now=now,
+                min_hits_needed=needed,
+                cooldown_s=cool,
+            )
+            if fire:
+                log.warning(
+                    "idle D-METAL-CAP wedge (running=%s waiting=%s metal=%.1fGB "
+                    "violations=%s); recycling engine via configured cmd",
+                    snap.running,
+                    snap.waiting,
+                    (snap.metal_active or 0) / 1e9,
+                    snap.cap_violations,
+                )
+                code = await asyncio.to_thread(run_recycle_cmd, cmd)
+                state.last_recycle_mono = asyncio.get_running_loop().time()
+                state.hits = 0
+                log.warning("engine recycle cmd exited %s (%s)", code, reason)
+        except asyncio.CancelledError:
+            raise
+        except Exception as exc:  # noqa: BLE001 — never kill connect over a probe miss
+            log.info("recycle watch skipped: %s", exc)
+        await asyncio.sleep(interval)
 
 
 async def main_async(args: argparse.Namespace) -> int:
@@ -241,6 +301,20 @@ def add_connect_arguments(parser: argparse.ArgumentParser) -> None:
     parser.add_argument("--max-model-len", type=int, default=None)
     parser.add_argument("--engine", default="")
     parser.add_argument("--quant", default="")
+    parser.add_argument(
+        "--recycle-cmd",
+        default=os.environ.get("CORTEX_DEPLOYER_RECYCLE_CMD") or "",
+        help=(
+            "shell command to recycle the local engine when Rapid-MLX is idle "
+            "and D-METAL-CAP is rejecting (or CORTEX_DEPLOYER_RECYCLE_CMD). "
+            "Never runs while requests_running>0"
+        ),
+    )
+    parser.add_argument(
+        "--auto-update",
+        action="store_true",
+        help="upgrade the deployer package on start (models / run stay up)",
+    )
 
 
 def parse_connect_args(argv: list[str] | None = None) -> argparse.Namespace:

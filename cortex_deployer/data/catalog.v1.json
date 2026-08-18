@@ -4,7 +4,7 @@
   "source": "https://cortex.shizuha.com/deployer/catalog.json",
   "notes": "Curated hardware × model × quant. min_vram_mb is full-GPU (weights + KV + display headroom). If the card is smaller, the picker still offers the row as GPU+RAM offload — llama.cpp --fit keeps leftover layers in system RAM. 8 GB full-GPU default is Qwen3-8B Q5 @ 32k. Live 16 GB 5080: 27B Q2 fills the card at 8k; 16 GB agentic default is 9B Q6 @ 64k.",
   "deployer_release": {
-    "version": "0.3.11",
+    "version": "0.3.12",
     "tarball": "https://github.com/shizuha-labs/cortex-deployer/archive/refs/heads/main.tar.gz"
   },
   "hardware_tiers": [

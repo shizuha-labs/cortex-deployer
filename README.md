@@ -133,7 +133,12 @@ cortex-deployer server --host 127.0.0.1 --port 7480   # also: up, web
 cortex-deployer update                                # in-place; keeps models
 cortex-deployer update --check                        # exit 2 if a newer catalog exists
 cortex-deployer update --restart                      # upgrade then exec server
-cortex-deployer auto-update                           # persist upgrade-on-start
+cortex-deployer auto-update                           # persist upgrade-on-start, then update now
+cortex-deployer auto-update --off                     # stop checking on start
+cortex-deployer server --auto-update                  # same persist + apply if catalog is newer
+cortex-deployer connect --auto-update …               # same, then re-exec connect only (engine stays)
+# Idle Rapid-MLX D-METAL-CAP recycle (never while requests_running>0):
+#   CORTEX_DEPLOYER_RECYCLE_CMD='launchctl kickstart -k gui/$UID/<engine-label>'
 cortex-deployer setup                                 # recommended Qwen
 cortex-deployer recommend
 cortex-deployer recipes

@@ -50,6 +50,21 @@ class CliTests(unittest.TestCase):
         args = parser.parse_args(["auto-update", "--off"])
         self.assertEqual(args.command, "auto-update")
         self.assertTrue(args.off)
+        args = parser.parse_args(
+            [
+                "connect",
+                "--gateway",
+                "wss://example/ws",
+                "--model",
+                "Qwen3.8-27B-MLX",
+                "--recycle-cmd",
+                "launchctl kickstart -k gui/501/com.shizuha.mlx-qwen38-27b-8bit",
+                "--auto-update",
+            ]
+        )
+        self.assertEqual(args.command, "connect")
+        self.assertTrue(args.auto_update)
+        self.assertIn("mlx-qwen38-27b-8bit", args.recycle_cmd)
 
     def test_recommend_cli(self):
         buf = io.StringIO()
