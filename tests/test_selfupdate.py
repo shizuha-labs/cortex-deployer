@@ -76,3 +76,9 @@ class SelfUpdateTests(unittest.TestCase):
         os.environ["CORTEX_DEPLOYER_AUTO_UPDATE"] = "1"
         self.addCleanup(lambda: os.environ.pop("CORTEX_DEPLOYER_AUTO_UPDATE", None))
         self.assertTrue(selfupdate.auto_update_enabled())
+
+    def test_apply_on_connect_is_noop_when_current(self):
+        os.environ["CORTEX_DEPLOYER_UPDATED"] = "1"
+        self.addCleanup(lambda: os.environ.pop("CORTEX_DEPLOYER_UPDATED", None))
+        # Must not raise or exec when the one-shot guard is set.
+        selfupdate.apply_on_connect()
