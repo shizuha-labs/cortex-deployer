@@ -29,3 +29,8 @@ class ResolveBinaryTests(unittest.TestCase):
     def test_generic_name_uses_finder(self):
         with patch("cortex_deployer.hostinfo.find_llama_server", return_value="/opt/llama-server"):
             self.assertEqual(resolve_binary("llamacpp", "llama-server"), "/opt/llama-server")
+
+    def test_mlx_lm_server_not_replaced_by_rapid_mlx_env(self):
+        os.environ["CORTEX_DEPLOYER_MLX"] = "/opt/rapid-mlx"
+        self.addCleanup(lambda: os.environ.pop("CORTEX_DEPLOYER_MLX", None))
+        self.assertEqual(resolve_binary("mlx", "mlx_lm.server"), "mlx_lm.server")

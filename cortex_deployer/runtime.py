@@ -10,7 +10,7 @@ import time
 from pathlib import Path
 from typing import Any
 from urllib.error import URLError
-from urllib.request import urlopen
+from urllib.request import Request, urlopen
 
 from .engines import render_process
 from .paths import logs_dir
@@ -65,9 +65,17 @@ def _loopback_url(url: str) -> str:
     return url.replace("://0.0.0.0:", "://127.0.0.1:").replace("://[::]:", "://[::1]:")
 
 
-def _probe(url: str, timeout: float = 2.0) -> bool:
+def _probe(url: str, timeout: float = 2.0, api_key: str = "") -> bool:
     try:
-        with urlopen(_loopback_url(url).rstrip("/") + "/models", timeout=timeout) as resp:
+        headers = {"accept": "application/json"}
+        if api_key:
+            headers["authorization"] = "Bearer " + api_key
+        req = Request(
+            _loopback_url(url).rstrip("/") + "/models",
+            headers=headers,
+            method="GET",
+        )
+        with urlopen(req, timeout=timeout) as resp:
             return 200 <= getattr(resp, "status", 200) < 300
     except (URLError, TimeoutError, OSError, ValueError):
         return False
@@ -82,7 +90,7 @@ def reconcile() -> list[dict[str, Any]]:
         if backend.get("state") == "running" and not _pid_alive(pid) and backend.get("kind") != "adopt":
             backend = store.update_backend(backend["id"], state="stopped", pid=None, healthy=False) or backend
         elif base:
-            healthy = _probe(base)
+            healthy = _probe(base, api_key=str(backend.get("api_key") or ""))
             if healthy != bool(backend.get("healthy")):
                 backend = store.update_backend(backend["id"], healthy=healthy) or backend
             else:
@@ -102,9 +110,15 @@ def pick_port(preferred: int | None = None, host: str = "127.0.0.1") -> int:
 
 def resolve_binary(engine: str, override: str = "") -> str:
     # Recipe argv always starts with a generic name ("llama-server"). That is a
-    # hint, not a resolved path — only use it when the file actually exists.
-    if override and os.path.isfile(override):
-        return override
+    # hint, not a resolved path — only use it when the file actually exists
+    # or is on PATH (so mlx_lm.server wins over a stale CORTEX_DEPLOYER_MLX).
+    if override:
+        if os.path.isfile(override):
+            return override
+        from .engines.mlx import is_mlx_lm
+
+        if is_mlx_lm(override):
+            return shutil.which(override) or override
     env_key = {
         "llamacpp": "CORTEX_DEPLOYER_LLAMA_SERVER",
         "vllm": "CORTEX_DEPLOYER_VLLM",
@@ -157,7 +171,7 @@ def start_backend(backend_id: str) -> dict[str, Any]:
     if backend is None:
         raise KeyError(backend_id)
     if backend.get("kind") == "adopt":
-        healthy = _probe(backend.get("base_url") or "")
+        healthy = _probe(backend.get("base_url") or "", api_key=str(backend.get("api_key") or ""))
         updated = store.update_backend(
             backend_id,
             state="running" if healthy else "stopped",
@@ -301,6 +315,7 @@ def deploy_from_spec(spec: dict[str, Any]) -> dict[str, Any]:
                 "engine": spec.get("engine") or "external",
                 "served_name": model,
                 "base_url": base,
+                "api_key": spec.get("api_key") or "",
                 "host": "",
                 "port": 0,
                 "context_length": spec.get("context_length"),

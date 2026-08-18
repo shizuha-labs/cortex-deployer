@@ -51,6 +51,74 @@ def _cmd_render(args: argparse.Namespace) -> int:
     return 0
 
 
+def _cmd_attach(args: argparse.Namespace) -> int:
+    from . import attach
+
+    if args.scan:
+        hits = attach.scan_local()
+        if args.json:
+            print(json.dumps({"hits": hits}, indent=2))
+            return 0 if hits else 1
+        if not hits:
+            print("no local OpenAI-compatible server found")
+            print("tried LM Studio :1234, Ollama :11434, vLLM :8000, llama.cpp :8080, SGLang :30000")
+            return 1
+        for hit in hits:
+            models = ", ".join(hit.get("models") or []) or "(no /v1/models ids)"
+            print(f"{hit['label']:22} {hit['url']}  {models}")
+        return 0
+
+    url = (args.url or "").strip()
+    if not url:
+        print("attach requires a URL, or --scan", file=sys.stderr)
+        return 2
+    existing = attach.already_attached(url)
+    if existing and not args.force:
+        print(f"already attached {existing.get('served_name')} @ {existing.get('base_url')} ({existing.get('id')})")
+        return 0
+    try:
+        backend = attach.attach(
+            url,
+            model=args.model or "",
+            api_key=args.api_key or "",
+            engine=args.engine or "",
+            require_probe=not args.force,
+        )
+    except ValueError as exc:
+        print(exc, file=sys.stderr)
+        return 1
+    if args.json:
+        print(json.dumps(backend, indent=2))
+    else:
+        print(
+            f"attached {backend.get('served_name')} @ {backend.get('base_url')}"
+            + (" healthy" if backend.get("healthy") else " (probe pending)")
+        )
+        print("tunnel: cortex-deployer connect --upstream", backend.get("base_url"), "--model", backend.get("served_name"), "--token <pairing>")
+    if args.connect:
+        if not args.token:
+            print("attach --connect needs --token (pairing from Cortex)", file=sys.stderr)
+            return 2
+        from .client import parse_connect_args, run_connect
+
+        conn = parse_connect_args(
+            [
+                "--gateway",
+                args.gateway,
+                "--token",
+                args.token,
+                "--model",
+                args.model or str(backend.get("served_name") or ""),
+                "--upstream",
+                str(backend.get("base_url") or url),
+            ]
+        )
+        if args.api_key:
+            os.environ["CORTEX_DEPLOYER_UPSTREAM_KEY"] = args.api_key
+        run_connect(conn)
+    return 0
+
+
 def _cmd_connect(args: argparse.Namespace) -> int:
     from . import selfupdate
 
@@ -247,6 +315,25 @@ def build_parser() -> argparse.ArgumentParser:
     )
     add_connect_arguments(connect)
 
+    att = sub.add_parser(
+        "attach",
+        help="point at an already-running local /v1 (LM Studio, Ollama, vLLM) and tunnel it to Cortex",
+    )
+    att.add_argument("url", nargs="?", default="", help="OpenAI-compatible base, e.g. http://127.0.0.1:1234/v1")
+    att.add_argument("--scan", action="store_true", help="probe well-known local ports and print what is up")
+    att.add_argument("--model", default="", help="catalog/served name (default: first id from /v1/models)")
+    att.add_argument("--api-key", default="", help="upstream key if the local server requires one")
+    att.add_argument("--engine", default="", help="lmstudio / ollama / vllm / llamacpp / sglang / external")
+    att.add_argument("--force", action="store_true", help="register even if /v1/models does not answer")
+    att.add_argument("--json", action="store_true")
+    att.add_argument("--connect", action="store_true", help="after attach, open the Cortex tunnel (needs --token)")
+    att.add_argument(
+        "--gateway",
+        default=os.environ.get("CORTEX_DEPLOYER_GATEWAY")
+        or "wss://cortex.shizuha.com/cortex/deployer/ws/register",
+    )
+    att.add_argument("--token", default=os.environ.get("CORTEX_DEPLOYER_TOKEN") or "")
+
     rec = sub.add_parser("recommend", help="rank bundled recipes against detected VRAM")
     rec.add_argument("--json", action="store_true")
 
@@ -300,6 +387,7 @@ def main(argv: list[str] | None = None) -> None:
         "render": _cmd_render,
         "run": _cmd_run,
         "connect": _cmd_connect,
+        "attach": _cmd_attach,
         "recommend": _cmd_recommend,
         "setup": _cmd_setup,
         "download": _cmd_download,

@@ -65,6 +65,18 @@ class CliTests(unittest.TestCase):
         self.assertEqual(args.command, "connect")
         self.assertTrue(args.auto_update)
         self.assertIn("mlx-qwen38-27b-8bit", args.recycle_cmd)
+        args = parser.parse_args(
+            [
+                "connect",
+                "--gateway",
+                "wss://example/ws",
+                "--model",
+                "Qwen3.8-27B-MLX",
+                "--rewrite-model",
+                "default_model",
+            ]
+        )
+        self.assertEqual(args.rewrite_model, "default_model")
 
     def test_recommend_cli(self):
         buf = io.StringIO()

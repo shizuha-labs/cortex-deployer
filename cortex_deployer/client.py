@@ -73,6 +73,56 @@ def _out_headers(resp: httpx.Response) -> dict[str, str]:
     return {k: v for k, v in resp.headers.items() if k.lower() != "content-length"}
 
 
+def _rewrite_json_model(body: bytes, name: str) -> bytes:
+    """Point an OpenAI body at the single loaded mlx-lm model.
+
+    mlx_lm.server only maps ``default_model``; Cortex sends the catalog
+    id (Qwen3.8-27B-MLX). Rewrite so we do not trigger an HF fetch.
+    """
+    if not name or not body:
+        return body
+    try:
+        obj = json.loads(body)
+    except (TypeError, ValueError):
+        return body
+    if not isinstance(obj, dict) or "model" not in obj:
+        return body
+    obj["model"] = name
+    return json.dumps(obj).encode()
+
+
+def _inject_advertised_models(body: bytes, names: list[str], ctx: int | None) -> bytes:
+    """Ensure Cortex health sees the catalog / served name on /v1/models.
+
+    mlx_lm.server lists the local path (and leftover HF cache repos), never
+    ``Qwen3.8-27B-MLX`` / ``qwen3.8-27b``. Health then marks model_absent.
+    """
+    try:
+        obj = json.loads(body or b"")
+    except (TypeError, ValueError):
+        return body
+    if not isinstance(obj, dict):
+        return body
+    data = obj.get("data")
+    if not isinstance(data, list):
+        data = []
+    have = {m.get("id") for m in data if isinstance(m, dict)}
+    extra = []
+    for name in names:
+        n = str(name or "").strip()
+        if not n or n in have:
+            continue
+        row = {"id": n, "object": "model", "owned_by": "mlx-lm"}
+        if ctx:
+            row["context_window"] = int(ctx)
+            row["max_model_len"] = int(ctx)
+        extra.append(row)
+        have.add(n)
+    if extra:
+        obj["data"] = extra + data
+    return json.dumps(obj).encode()
+
+
 async def relay_request(
     client: httpx.AsyncClient,
     upstream: str,
@@ -86,7 +136,16 @@ async def relay_request(
     body = b64d(msg.get("body_b64", "")) if msg.get("body_b64") else None
     rid = str(msg.get("id") or "")
 
+    rewrite = (
+        str(msg.get("rewrite_model") or "").strip()
+        or os.environ.get("CORTEX_DEPLOYER_REWRITE_MODEL", "").strip()
+    )
+    if rewrite and body and method in {"POST", "PUT", "PATCH"}:
+        body = _rewrite_json_model(body, rewrite)
     url = join_upstream(upstream, path)
+    key = os.environ.get("CORTEX_DEPLOYER_UPSTREAM_KEY") or os.environ.get("DEPLOYER_UPSTREAM_KEY") or ""
+    if key and not any(k.lower() == "authorization" for k in headers):
+        headers["authorization"] = "Bearer " + key
     log.info("relay %s %s (%d bytes)", method, url, len(body or b""))
     try:
         async with client.stream(method, url, content=body, headers=headers) as resp:
@@ -101,7 +160,20 @@ async def relay_request(
                 await send(end_frame(rid))
                 return
             content = await resp.aread()
-            await send(response_frame(rid, resp.status_code, out_headers, content))
+            status = resp.status_code
+            root = path.split("?", 1)[0].rstrip("/") or "/"
+            if method == "GET" and root == "/metrics" and status == 404:
+                # mlx-lm has no Prometheus. Cortex treats /metrics 404 as
+                # unhealthy and 503s the catalog even though /v1/models is 200.
+                status = 200
+                out_headers = {"content-type": "text/plain; version=0.0.4"}
+                content = b"# cortex-deployer: upstream has no /metrics\n"
+            if method == "GET" and root in {"/models", "/v1/models"} and status == 200:
+                ads = msg.get("advertise_models") or []
+                ctx = msg.get("advertise_context")
+                if ads:
+                    content = _inject_advertised_models(content, ads, ctx)
+            await send(response_frame(rid, status, out_headers, content))
     except asyncio.CancelledError:
         log.info("upstream cancelled rid=%s %s %s", rid, method, url)
         raise
@@ -149,6 +221,17 @@ async def run_once(args: argparse.Namespace) -> None:
 
         async def handle(msg: dict) -> None:
             async with sem:
+                extra: dict = {}
+                if getattr(args, "rewrite_model", ""):
+                    extra["rewrite_model"] = args.rewrite_model
+                # Served/upstream name first so Cortex advertised_id matches
+                # backend.upstream_name (qwen3.8-27b), not only the catalog id.
+                ads = [*(args.alias or []), args.model]
+                extra["advertise_models"] = [a for a in ads if a]
+                if getattr(args, "max_model_len", None):
+                    extra["advertise_context"] = int(args.max_model_len)
+                if extra:
+                    msg = {**msg, **extra}
                 await relay_request(client, args.upstream, msg, send)
 
         async with httpx.AsyncClient(timeout=UPSTREAM_TIMEOUT) as client:
@@ -314,6 +397,14 @@ def add_connect_arguments(parser: argparse.ArgumentParser) -> None:
         "--auto-update",
         action="store_true",
         help="upgrade the deployer package on start (models / run stay up)",
+    )
+    parser.add_argument(
+        "--rewrite-model",
+        default=os.environ.get("CORTEX_DEPLOYER_REWRITE_MODEL") or "",
+        help=(
+            "replace JSON body model= with this name (mlx_lm.server wants "
+            "default_model). Or CORTEX_DEPLOYER_REWRITE_MODEL"
+        ),
     )
 
 

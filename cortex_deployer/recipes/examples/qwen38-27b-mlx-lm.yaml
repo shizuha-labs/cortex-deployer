@@ -1,0 +1,39 @@
+# Official mlx-lm HTTP server — bounded prompt cache, no Rapid-MLX paged KV.
+# Stable tok/s over peak speed. No MTP, no pin-system-prompt.
+#   cortex-deployer run this.yaml
+#   cortex-deployer connect --upstream http://127.0.0.1:8015/v1 \
+#       --rewrite-model default_model ...
+schema_version: deployer.recipe.v1
+name: qwen38-27b-mlx-lm
+engine: mlx
+executor: process
+quant: "8bit"
+model:
+  id: qwen3.8-27b
+  served_name: qwen3.8-27b
+  source:
+    kind: local_path
+    path: /models/Qwen3.8-27B-8bit
+launch:
+  host: 127.0.0.1
+  port: 8015
+  context_length: 131072
+  extra_args:
+    - mlx_lm.server
+    - --max-tokens
+    - "32768"
+    - --decode-concurrency
+    - "1"
+    - --prompt-concurrency
+    - "1"
+    - --prompt-cache-size
+    - "4"
+    - --prompt-cache-bytes
+    - "8589934592"
+    - --chat-template-args
+    - '{"enable_thinking":false}'
+connect:
+  aliases:
+    - Qwen3.8-27B-MLX
+    - qwen3.8-27b
+  max_concurrent: 1
