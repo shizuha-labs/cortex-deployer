@@ -84,17 +84,19 @@ def start_setup(recipe_file: str = "") -> dict[str, Any]:
                 raise ValueError("no GGUF after download")
             job["weights"] = weights
             job["step"] = "start"
+            model_path = weights if recipe.engine == "llamacpp" else recipe.model.path
+            ready_timeout = 180.0 if recipe.engine == "comfyui" else 8.0
             backend = runtime.deploy_from_spec(
                 {
                     "kind": "recipe",
                     "recipe": chosen,
-                    "model_path": weights,
+                    "model_path": model_path,
                     "served_name": recipe.model.served_name,
                     "context_length": recipe.launch.context_length,
                     "autostart": True,
                 }
             )
-            backend = runtime.wait_started(backend["id"], timeout=8.0)
+            backend = runtime.wait_started(backend["id"], timeout=ready_timeout)
             job["backend_id"] = backend.get("id") or ""
             job["base_url"] = backend.get("base_url") or ""
             job["state"] = "done"

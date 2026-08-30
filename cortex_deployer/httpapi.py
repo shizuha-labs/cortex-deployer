@@ -18,7 +18,7 @@ from urllib.parse import urlparse
 from urllib.request import Request, urlopen
 
 from . import __version__, attach, catalog, download, hostinfo, recommend, setup, store
-from . import connect_ctl
+from . import connect_ctl, pairing
 from .recipes import list_examples, load_recipe
 from .runtime import (
     _loopback_url,
@@ -102,6 +102,13 @@ def handle(method: str, path: str, body: bytes) -> tuple[int, bytes, str]:
         return _json_bytes(recommend.recommend())
     if method == "GET" and route == "/api/catalog":
         return _json_bytes(catalog.fetch_catalog())
+
+    if method == "GET" and route == "/api/pairing-token":
+        # Return the active pairing token, or mint a fresh one on first use.
+        return _json_bytes(pairing.current() or pairing.generate())
+    if method == "POST" and route == "/api/pairing-token/revoke":
+        pairing.revoke()
+        return _json_bytes({"ok": True})
     if method == "GET" and route == "/api/downloads":
         return _json_bytes({"jobs": download.list_jobs(), "local": download.list_local_models()})
     if method == "POST" and route == "/api/downloads":

@@ -17,6 +17,7 @@ class CliTests(unittest.TestCase):
         self.assertEqual(caught.exception.code, 0)
         self.assertIn("llamacpp", buf.getvalue())
         self.assertIn("vllm", buf.getvalue())
+        self.assertIn("comfyui", buf.getvalue())
 
     def test_render_example(self):
         path = next(p for p in list_examples() if p.name.startswith("llamacpp"))

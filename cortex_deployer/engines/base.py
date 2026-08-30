@@ -47,4 +47,8 @@ def render_process(recipe: Recipe) -> ProcessLaunch:
         from .mlx import render_mlx
 
         return render_mlx(recipe)
+    if recipe.engine == "comfyui":
+        from .comfyui import render_comfyui
+
+        return render_comfyui(recipe)
     raise ValueError(f"unknown engine {recipe.engine!r}")

@@ -34,3 +34,10 @@ class ResolveBinaryTests(unittest.TestCase):
         os.environ["CORTEX_DEPLOYER_MLX"] = "/opt/rapid-mlx"
         self.addCleanup(lambda: os.environ.pop("CORTEX_DEPLOYER_MLX", None))
         self.assertEqual(resolve_binary("mlx", "mlx_lm.server"), "mlx_lm.server")
+
+    def test_comfyui_keeps_existing_python(self):
+        tmp = tempfile.TemporaryDirectory()
+        self.addCleanup(tmp.cleanup)
+        real = Path(tmp.name) / "python"
+        real.write_text("", encoding="utf-8")
+        self.assertEqual(resolve_binary("comfyui", str(real)), str(real))

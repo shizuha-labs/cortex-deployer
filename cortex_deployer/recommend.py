@@ -29,7 +29,7 @@ def nvidia_vram_mb(snap: dict[str, Any] | None = None) -> int:
 
 def is_example_recipe(row: dict[str, Any], *, apple: bool) -> bool:
     fname = str(row.get("file") or "")
-    if fname.startswith("qwen"):
+    if fname.startswith("qwen") or fname.startswith("minimax"):
         return False
     if apple and fname.startswith("mlx-macos"):
         return False
