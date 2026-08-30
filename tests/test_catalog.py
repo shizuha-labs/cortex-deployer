@@ -17,6 +17,7 @@ class CatalogTests(unittest.TestCase):
         self.assertIn("qwen3.5-9b", ids)
         self.assertIn("qwen3-14b", ids)
         self.assertIn("qwen3-8b", ids)
+        self.assertIn("minimax-h3", ids)
         rel = cat.get("deployer_release") or {}
         self.assertTrue(rel.get("version"))
         self.assertIn("tarball", rel)

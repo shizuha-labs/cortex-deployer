@@ -66,7 +66,7 @@ The live picker is the source of truth. Typical full-GPU defaults:
 | --- | --- |
 | 8 GB | Qwen3-8B Q5 @ 32k (larger models listed as GPU+RAM offload) |
 | 16 GB | Qwen3.5-9B UD-Q6 @ 64k. 27B only fills as Q2 @ 8k |
-| 24 GB | Qwen3.8-27B Q4-class @ long context |
+| 24 GB | Qwen3.8-27B Q4-class @ long context. Video: MiniMax H3 pruned INT8 FL2VA (ComfyUI 0.30+, PyTorch CUDA 13) |
 | Apple Silicon | MLX recipes from the same catalog |
 
 Offload rows stay visible. `min_vram_mb` is the full-GPU number; offload
@@ -83,7 +83,7 @@ uses leftover layers in system RAM (`--fit`).
 | `GET /v1/models` · `POST /v1/chat/completions` | Local OpenAI-compatible endpoint (CORS + stream) |
 | `cortex-deployer connect` | Announce a running backend to Cortex Router |
 
-Engines: **llama.cpp**, **SGLang**, **vLLM**, **MLX**.
+Engines: **llama.cpp**, **SGLang**, **vLLM**, **MLX**, **ComfyUI** (MiniMax H3 video).
 
 Downloads do **not** require a Hugging Face token. The app tries Hugging
 Face, then a public mirror. No shared token is baked in. Optional:

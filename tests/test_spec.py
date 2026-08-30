@@ -24,6 +24,7 @@ class SpecTests(unittest.TestCase):
         names = {path.name for path in paths}
         self.assertIn("qwen38-27b-q3-llamacpp.yaml", names)
         self.assertIn("mlx-macos.yaml", names)
+        self.assertIn("minimax-h3-fl2va-comfyui.yaml", names)
         for path in paths:
             recipe = load_recipe(path)
             self.assertTrue(recipe.model.id)
@@ -38,3 +39,13 @@ class SpecTests(unittest.TestCase):
         self.assertEqual(recipe.model.repo, "unsloth/Qwen3.8-27B-GGUF")
         self.assertEqual(recipe.min_vram_mb, 22000)
         self.assertIn("UD-Q3_K_XL", recipe.download_glob)
+
+    def test_q3_16gb_recipe_targets_16gb_class(self):
+        # CTX-732: the 16 GB (RTX 5080) recipe must be honest — Q3_K_XL fits a
+        # 16 GB card at 8k context, but Q4_K_M and above must NOT be offered.
+        path = next(p for p in list_examples() if p.name == "qwen38-27b-q3-16gb-llamacpp.yaml")
+        recipe = load_recipe(path)
+        self.assertEqual(recipe.model.repo, "unsloth/Qwen3.8-27B-GGUF")
+        self.assertEqual(recipe.min_vram_mb, 16000)
+        self.assertIn("UD-Q3_K_XL", recipe.download_glob)
+        self.assertEqual(recipe.quant, "UD-Q3_K_XL")

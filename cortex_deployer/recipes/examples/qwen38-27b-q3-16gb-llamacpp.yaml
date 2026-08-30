@@ -1,0 +1,34 @@
+schema_version: deployer.recipe.v1
+name: qwen38-27b-q3-16gb-llamacpp
+engine: llamacpp
+executor: process
+quant: UD-Q3_K_XL
+min_vram_mb: 16000
+notes: >-
+  13.4 GB weights + ~1.5-2 GB KV/overhead at 8k ctx ≈ 15 GB — the highest
+  quality 27B quant that honestly fits a 16 GB card (RTX 5080). TIGHT: keep
+  context at 8k and one concurrent request; Windows driver overhead can push
+  it over. Q4_K_M (17.1 GB) and above DO NOT fit 16 GB — use the 24 GB
+  qwen38-27b-llamacpp.yaml (UD-Q4_K_XL) instead.
+download_glob: "*UD-Q3_K_XL.gguf"
+model:
+  id: Qwen3.8-27B-Q3-16GB
+  served_name: Qwen3.8-27B-Q3-16GB
+  source:
+    kind: huggingface
+    repo: unsloth/Qwen3.8-27B-GGUF
+    filename: Qwen3.8-27B-UD-Q3_K_XL.gguf
+    path: ""
+launch:
+  host: 127.0.0.1
+  port: 8080
+  context_length: 8192
+  extra_args:
+    - --n-gpu-layers
+    - "99"
+    - -np
+    - "1"
+connect:
+  aliases:
+    - Qwen3.8-27B-Q3-16GB
+  max_concurrent: 1

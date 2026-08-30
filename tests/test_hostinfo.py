@@ -38,3 +38,57 @@ class HostinfoTests(unittest.TestCase):
         self.assertTrue(urls[0].startswith("http://127.0.0.1:7480"))
         pinned = advertise_urls("127.0.0.1", 7480)
         self.assertEqual(pinned, ["http://127.0.0.1:7480/"])
+
+
+class GpuDetectionTests(unittest.TestCase):
+    """CTX-754: detect_gpus() must parse nvidia-smi and Apple sysctl output
+    without a live GPU (mocked)."""
+
+    def test_nvidia_smi_parses_vram(self):
+        from cortex_deployer import hostinfo
+
+        smi_out = (
+            "0, NVIDIA GeForce RTX 5080, 16376, 580.0\n"
+            "1, NVIDIA GeForce RTX 3090, 24576, 580.0\n"
+        )
+        with (
+            patch.object(hostinfo.shutil, "which", return_value="/usr/bin/nvidia-smi"),
+            patch.object(hostinfo, "_run", return_value=smi_out),
+            patch.object(hostinfo.platform, "system", return_value="Linux"),
+        ):
+            gpus = hostinfo.detect_gpus()
+        self.assertEqual(len(gpus), 2)
+        self.assertEqual(gpus[0]["vendor"], "nvidia")
+        self.assertEqual(gpus[0]["memory_mb"], 16376)
+        self.assertEqual(gpus[0]["name"], "NVIDIA GeForce RTX 5080")
+        self.assertEqual(gpus[1]["memory_mb"], 24576)
+
+    def test_no_nvidia_smi_returns_empty_on_linux(self):
+        from cortex_deployer import hostinfo
+
+        with (
+            patch.object(hostinfo.shutil, "which", return_value=None),
+            patch.object(hostinfo.platform, "system", return_value="Linux"),
+        ):
+            gpus = hostinfo.detect_gpus()
+        self.assertEqual(gpus, [])
+
+    def test_apple_silicon_reports_unified_memory(self):
+        from cortex_deployer import hostinfo
+
+        # 16 GiB unified memory = 17179869184 bytes.
+        with (
+            patch.object(hostinfo.shutil, "which", return_value=None),
+            patch.object(hostinfo.platform, "system", return_value="Darwin"),
+            patch.object(
+                hostinfo, "_run",
+                side_effect=lambda cmd: (
+                    "Apple M4 Pro" if "brand_string" in cmd else "17179869184"
+                ),
+            ),
+        ):
+            gpus = hostinfo.detect_gpus()
+        self.assertEqual(len(gpus), 1)
+        self.assertEqual(gpus[0]["vendor"], "apple")
+        self.assertEqual(gpus[0]["memory_mb"], 16384)
+        self.assertEqual(gpus[0]["driver"], "metal")

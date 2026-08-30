@@ -166,6 +166,54 @@ class ServerTests(unittest.TestCase):
         )
         self.assertEqual(status, 400)
 
+    def test_download_success_path_mocked_hf(self):
+        """CTX-752: the HTTP download endpoint must drive a job to 'done' with
+        the file saved — HF client mocked, no live download."""
+        from unittest import mock
+        import time
+
+        from cortex_deployer import download as dl_mod
+
+        def fake_resolve(repo, filename="", glob=""):
+            return ["Qwen3.8-27B-UD-Q2_K_XL.gguf"]
+
+        def fake_download_one(url, dest, job):
+            dest.parent.mkdir(parents=True, exist_ok=True)
+            dest.write_bytes(b"gguf" * 100)
+            job["bytes"] = 400
+            job["total"] = 400
+            job["path"] = str(dest)
+
+        with (
+            mock.patch.object(dl_mod, "resolve_names", side_effect=fake_resolve),
+            mock.patch.object(dl_mod, "_download_one", side_effect=fake_download_one),
+        ):
+            status, job = self._json(
+                "POST",
+                "/api/downloads",
+                {
+                    "repo": "unsloth/Qwen3.8-27B-GGUF",
+                    "filename": "Qwen3.8-27B-UD-Q2_K_XL.gguf",
+                },
+            )
+            self.assertEqual(status, 202)
+            self.assertIn("id", job)
+            # Poll until terminal.
+            for _ in range(50):
+                status, cur = self._json("GET", f"/api/downloads/{job['id']}")
+                self.assertEqual(status, 200)
+                if cur["state"] in ("done", "error"):
+                    break
+                time.sleep(0.1)
+            self.assertEqual(cur["state"], "done", cur)
+            self.assertTrue(cur["path"].endswith(".gguf"), cur)
+            # The saved file must exist on disk.
+            self.assertTrue(Path(cur["path"]).is_file())
+            # The job must also be surfaced by the list endpoint.
+            status, listing = self._json("GET", "/api/downloads")
+            self.assertEqual(status, 200)
+            self.assertTrue(any(j["id"] == job["id"] for j in listing["jobs"]))
+
     def test_version_and_catalog_refresh(self):
         from cortex_deployer import __version__
 

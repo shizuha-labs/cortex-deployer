@@ -6,8 +6,8 @@ from dataclasses import dataclass, field
 from typing import Any, Literal
 
 
-ENGINE_KINDS = ("llamacpp", "sglang", "vllm", "mlx")
-EngineKind = Literal["llamacpp", "sglang", "vllm", "mlx"]
+ENGINE_KINDS = ("llamacpp", "sglang", "vllm", "mlx", "comfyui")
+EngineKind = Literal["llamacpp", "sglang", "vllm", "mlx", "comfyui"]
 ExecutorKind = Literal["process", "docker"]
 RECIPE_SCHEMA = "deployer.recipe.v1"
 
