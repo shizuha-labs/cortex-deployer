@@ -6,6 +6,7 @@ import os
 import shutil
 import signal
 import subprocess
+import sys
 import time
 from pathlib import Path
 from typing import Any
@@ -124,9 +125,16 @@ def resolve_binary(engine: str, override: str = "") -> str:
         "vllm": "CORTEX_DEPLOYER_VLLM",
         "sglang": "CORTEX_DEPLOYER_SGLANG",
         "mlx": "CORTEX_DEPLOYER_MLX",
+        "comfyui": "CORTEX_DEPLOYER_PYTHON",
     }.get(engine)
     if env_key and os.environ.get(env_key):
         return os.environ[env_key]
+    if engine == "comfyui":
+        if override:
+            found = shutil.which(override) if not os.path.isfile(override) else override
+            if found:
+                return found
+        return sys.executable
     if engine == "llamacpp":
         from .hostinfo import find_llama_server
 

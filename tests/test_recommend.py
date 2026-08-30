@@ -61,6 +61,10 @@ class RecommendTests(unittest.TestCase):
         self.assertEqual(qfits["qwen38-27b-q4"], "recommended")
         self.assertEqual(qfits["qwen38-27b-q3"], "ok")
         self.assertEqual(qfits["qwen38-27b-q2"], "ok")
+        h3 = next(m for m in out["models"] if m["id"] == "minimax-h3")
+        self.assertEqual(h3["recommended_quant"], "minimax-h3-fl2va")
+        h3fits = {q["id"]: q["fit"] for q in h3["quants"]}
+        self.assertEqual(h3fits["minimax-h3-fl2va"], "recommended")
 
     def test_apple_prefers_mlx_macos(self):
         snap = {

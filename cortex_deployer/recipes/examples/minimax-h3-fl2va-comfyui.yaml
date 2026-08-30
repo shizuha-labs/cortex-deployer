@@ -1,0 +1,33 @@
+schema_version: deployer.recipe.v1
+name: minimax-h3-fl2va-comfyui
+engine: comfyui
+executor: process
+quant: pruned-int8-convrot
+min_vram_mb: 22000
+notes: >
+  Official Comfy-Org MiniMax H3 FL2VA pack for a 24 GB Ampere card (RTX 3090).
+  DiT is pruned INT8 convrot (Comfy Org: INT8 on 3090, not Q4/Q2). Text encoder
+  is the official T2V Qwen3-VL AWQ file; ComfyUI offloads leftover activations
+  into host RAM. Requires ComfyUI 0.30+ at model.source.path and PyTorch with
+  CUDA 13 so INT8 convrot uses the kitchen CUDA backend. Weights: Hugging Face
+  Comfy-Org/MiniMax-H3 (FL2VA pruned INT8 + encoder + VAEs + turbo LoRA).
+  SGLang BF16 offload needs ~144 GB on disk and is not this recipe.
+download_glob: "diffusion_models/minimax_h3_fl2va_pruned_int8_convrot.safetensors"
+model:
+  id: MiniMax-H3
+  served_name: MiniMax-H3
+  source:
+    kind: local_path
+    path: ~/opt/ComfyUI
+    repo: Comfy-Org/MiniMax-H3
+launch:
+  host: 127.0.0.1
+  port: 8000
+  extra_args: []
+  env:
+    PYTORCH_CUDA_ALLOC_CONF: expandable_segments:True
+connect:
+  aliases:
+    - MiniMax-H3
+    - MiniMax-H3-FL2VA
+  max_concurrent: 1

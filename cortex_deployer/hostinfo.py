@@ -50,11 +50,19 @@ def detect_gpus() -> list[dict[str, Any]]:
                 )
     if platform.system() == "Darwin":
         out = _run(["sysctl", "-n", "machdep.cpu.brand_string"])
+        # Apple silicon shares unified memory between CPU and GPU. Report the
+        # total system memory (bytes -> MB) so the picker can give honest
+        # VRAM guidance instead of a bare 0 (CTX-754).
+        mem_bytes = _run(["sysctl", "-n", "hw.memsize"]).strip()
+        try:
+            mem_mb = int(int(mem_bytes) / (1024 * 1024))
+        except (TypeError, ValueError):
+            mem_mb = 0
         gpus.append(
             {
                 "index": 0,
                 "name": (out.strip() or "Apple Silicon") + " (Metal)",
-                "memory_mb": 0,
+                "memory_mb": mem_mb,
                 "driver": "metal",
                 "vendor": "apple",
             }
@@ -117,12 +125,26 @@ def find_llama_server() -> str | None:
     return None
 
 
+def find_comfyui() -> str | None:
+    env = os.environ.get("CORTEX_DEPLOYER_COMFYUI")
+    if env and Path(env).exists():
+        return env
+    for path in (
+        Path.home() / "opt" / "ComfyUI" / "main.py",
+        Path("/opt/ComfyUI/main.py"),
+    ):
+        if path.is_file():
+            return str(path.parent)
+    return None
+
+
 def detect_binaries() -> dict[str, str | None]:
     return {
         "llamacpp": find_llama_server(),
         "vllm": shutil.which("vllm"),
         "sglang": shutil.which("python3") or shutil.which("python"),
         "mlx": shutil.which("rapid-mlx"),
+        "comfyui": find_comfyui(),
     }
 
 

@@ -21,6 +21,8 @@ const adoptDlg = document.getElementById("adopt-dlg");
 const logDlg = document.getElementById("log-dlg");
 const connectDlg = document.getElementById("connect-dlg");
 const recipeSel = document.getElementById("recipe");
+const pairingTokenEl = document.getElementById("pairing-token");
+const pairingMsgEl = document.getElementById("pairing-msg");
 
 let recipes = [];
 
@@ -464,6 +466,13 @@ document.getElementById("chat-send").onclick = async () => {
   const out = document.getElementById("chat-out");
   out.textContent = "";
   const model = (document.getElementById("chat-model") || {}).value || "";
+  // CTX-699 competitive parity: optional system prompt + temperature control.
+  const system = (document.getElementById("chat-system") || {}).value || "";
+  const tempRaw = parseFloat((document.getElementById("chat-temp") || {}).value || "0.7");
+  const temperature = Number.isFinite(tempRaw) ? Math.min(2, Math.max(0, tempRaw)) : 0.7;
+  const messages = [];
+  if (system.trim()) messages.push({ role: "system", content: system.trim() });
+  messages.push({ role: "user", content: document.getElementById("chat-in").value });
   try {
     const res = await fetch("/v1/chat/completions", {
       method: "POST",
@@ -471,7 +480,8 @@ document.getElementById("chat-send").onclick = async () => {
       body: JSON.stringify({
         model,
         stream: true,
-        messages: [{ role: "user", content: document.getElementById("chat-in").value }],
+        temperature,
+        messages,
       }),
     });
     const ctype = res.headers.get("content-type") || "";
@@ -546,3 +556,39 @@ rowsEl.addEventListener("click", async (ev) => {
 
 loadRecipes().then(refresh).then(paintVersion).catch((e) => { hostline.textContent = e.message; });
 setInterval(() => refresh().catch(() => {}), 4000);
+
+// --- Pairing token (CTX-733) ---
+
+async function loadPairing() {
+  try {
+    const data = await api("/api/pairing-token");
+    pairingTokenEl.textContent = data.token || "(none)";
+    pairingMsgEl.textContent = "";
+  } catch (e) {
+    pairingTokenEl.textContent = "(unavailable)";
+    pairingMsgEl.textContent = e.message;
+  }
+}
+
+document.getElementById("pairing-copy").onclick = async () => {
+  const tok = pairingTokenEl.textContent;
+  if (!tok || tok === "(none)" || tok === "(unavailable)") return;
+  try {
+    await navigator.clipboard.writeText(tok);
+    pairingMsgEl.textContent = "copied";
+  } catch {
+    pairingMsgEl.textContent = "copy failed — select the token manually";
+  }
+};
+
+document.getElementById("pairing-regenerate").onclick = async () => {
+  try {
+    await api("/api/pairing-token/revoke", { method: "POST" });
+    await loadPairing();
+    pairingMsgEl.textContent = "new token issued";
+  } catch (e) {
+    pairingMsgEl.textContent = e.message;
+  }
+};
+
+loadPairing();

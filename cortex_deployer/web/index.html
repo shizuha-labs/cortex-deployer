@@ -58,6 +58,23 @@
     </section>
 
     <section class="panel" style="margin-top:16px">
+      <div class="panel-head">
+        <h2>Pairing token</h2>
+        <span class="muted">Connect this local backend to the Cortex catalog</span>
+      </div>
+      <p class="muted" style="margin:8px 0">
+        Paste this token into the Cortex catalog to register this local backend.
+        It expires after 15 minutes and can be revoked at any time.
+      </p>
+      <div style="display:flex; gap:8px; align-items:center">
+        <code id="pairing-token" style="flex:1; word-break:break-all">…</code>
+        <button type="button" class="ghost" id="pairing-copy">Copy</button>
+        <button type="button" class="ghost" id="pairing-regenerate">Regenerate</button>
+      </div>
+      <p id="pairing-msg" class="err"></p>
+    </section>
+
+    <section class="panel" style="margin-top:16px">
       <div class="panel-head"><h2>Local weights</h2><span class="muted">~/.cortex-deployer/models</span></div>
       <div id="local-models" class="muted" style="padding:12px">none yet</div>
     </section>
@@ -67,6 +84,12 @@
       <div style="padding:12px">
         <label>Model
           <select id="chat-model"></select>
+        </label>
+        <label>System prompt
+          <textarea id="chat-system" rows="2" style="width:100%" placeholder="Optional system prompt (e.g. 'You are a concise assistant.')"></textarea>
+        </label>
+        <label>Temperature
+          <input id="chat-temp" type="number" min="0" max="2" step="0.1" value="0.7" style="width:80px" />
         </label>
         <textarea id="chat-in" rows="3" style="width:100%" placeholder="Ask the running model…"></textarea>
         <div class="dlg-actions">
@@ -90,7 +113,7 @@
   <dialog id="deploy-dlg">
     <form id="deploy-form" method="dialog">
       <h3>Deploy model</h3>
-      <p class="muted">Starts a local engine (llama.cpp / vLLM / SGLang / MLX) and lists it here. Same idea as Cortex Backends — this box is yours.</p>
+      <p class="muted">Starts a local engine (llama.cpp / vLLM / SGLang / MLX / ComfyUI) and lists it here. Same idea as Cortex Backends — this box is yours.</p>
       <label>Recipe
         <select id="recipe"></select>
       </label>
