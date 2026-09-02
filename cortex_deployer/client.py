@@ -11,6 +11,7 @@ import shlex
 import signal
 import socket
 import ssl
+import sys
 from collections.abc import Awaitable, Callable
 from contextlib import asynccontextmanager, contextmanager, nullcontext
 from urllib.parse import urlparse
@@ -360,14 +361,63 @@ def _ws_connect_kwargs(uri: str) -> dict:
     return kwargs
 
 
+def enable_tcp_keepalive(ws) -> None:
+    """NAT/WAN middleboxes drop idle TCP; keep the WSS alive on public paths."""
+    sock = None
+    for attr in ("transport",):
+        trans = getattr(ws, attr, None)
+        if trans is not None and hasattr(trans, "get_extra_info"):
+            sock = trans.get_extra_info("socket")
+            if sock is not None:
+                break
+    protocol = getattr(ws, "protocol", None)
+    if sock is None and protocol is not None:
+        trans = getattr(protocol, "transport", None)
+        if trans is not None and hasattr(trans, "get_extra_info"):
+            sock = trans.get_extra_info("socket")
+    if sock is None:
+        return
+    try:
+        sock.setsockopt(socket.SOL_SOCKET, socket.SO_KEEPALIVE, 1)
+        idle, intvl, cnt = 15, 5, 5
+        if sys.platform == "darwin":
+            if hasattr(socket, "TCP_KEEPALIVE"):
+                sock.setsockopt(socket.IPPROTO_TCP, socket.TCP_KEEPALIVE, idle)
+        else:
+            if hasattr(socket, "TCP_KEEPIDLE"):
+                sock.setsockopt(socket.IPPROTO_TCP, socket.TCP_KEEPIDLE, idle)
+        if hasattr(socket, "TCP_KEEPINTVL"):
+            sock.setsockopt(socket.IPPROTO_TCP, socket.TCP_KEEPINTVL, intvl)
+        if hasattr(socket, "TCP_KEEPCNT"):
+            sock.setsockopt(socket.IPPROTO_TCP, socket.TCP_KEEPCNT, cnt)
+    except OSError as exc:
+        log.info("tcp keepalive not applied: %s", exc)
+
+
 @asynccontextmanager
-async def open_gateway_ws(token_uri: str, gateway: str, model: str):
-    """Dial LAN VIP first when reachable; fall back to public DNS on miss."""
-    connect_uri, vip, path = gateway_connect_target(token_uri)
+async def open_gateway_ws(
+    token_uri: str, gateway: str, model: str, *, path_force: str = "auto",
+):
+    """Dial LAN VIP and/or public DNS.
+
+    path_force:
+      auto — LAN VIP when reachable, else DNS (single socket)
+      lan  — LAN VIP only (raises if the VIP is down)
+      dns  — public DNS only (cafe / WAN / RB5009 hairpin)
+    """
+    connect_uri, vip, auto_path = gateway_connect_target(token_uri)
     host = urlparse(connect_uri).hostname or ""
-    candidates: list[tuple[str | None, str]] = [(vip, path)]
-    if vip:
-        candidates.append((None, "dns"))
+    force = (path_force or "auto").lower()
+    if force == "lan":
+        if not vip:
+            raise RuntimeError("lan vip unreachable")
+        candidates: list[tuple[str | None, str]] = [(vip, f"lan-vip:{vip}")]
+    elif force == "dns":
+        candidates = [(None, "dns")]
+    else:
+        candidates = [(vip, auto_path)]
+        if vip:
+            candidates.append((None, "dns"))
     last_exc: Exception | None = None
     for pin, label in candidates:
         log.info("connecting to gateway %s via %s (model=%s)", gateway, label, model)
@@ -379,7 +429,8 @@ async def open_gateway_ws(token_uri: str, gateway: str, model: str):
                     connect_uri, **_ws_connect_kwargs(connect_uri)
                 ) as ws:
                     entered = True
-                    yield ws
+                    enable_tcp_keepalive(ws)
+                    yield ws, label
             return
         except asyncio.CancelledError:
             raise
@@ -448,6 +499,8 @@ async def _run_cycle(
     link: ReconnectingLink,
     inflight: set[asyncio.Task],
     inflight_by_id: dict[str, asyncio.Task],
+    *,
+    path_force: str = "auto",
 ) -> None:
     """One connect → register → serve cycle. Does not cancel inflight on exit."""
     if not args.token:
@@ -457,8 +510,9 @@ async def _run_cycle(
     uri = f"{uri}{sep}token={args.token}"
     # ping_timeout must outlive a busy 1-slot Metal decode: a 20s default
     # missed pongs while sending SSE and the library closed with 1005.
-    # LAN VIP + SNI avoids the public WAN hairpin that close=1005'd us.
-    async with open_gateway_ws(uri, args.gateway, args.model) as ws:
+    async with open_gateway_ws(
+        uri, args.gateway, args.model, path_force=path_force,
+    ) as (ws, path_label):
         link.attach(ws)
         hello = hello_frame(
             args.model,
@@ -468,11 +522,15 @@ async def _run_cycle(
             quant=args.quant,
             max_concurrent=args.concurrency,
         )
+        hello["path"] = path_label
         await ws.send(json.dumps(hello))
         ack = json.loads(await ws.recv())
         if not ack.get("ok"):
             raise RuntimeError(f"gateway rejected registration: {ack}")
-        log.info("registered model=%s aliases=%s", args.model, hello["aliases"])
+        log.info(
+            "registered model=%s aliases=%s path=%s",
+            args.model, hello["aliases"], path_label,
+        )
 
         async def send(obj: dict) -> None:
             await link.send(obj)
@@ -575,12 +633,53 @@ async def _recycle_watch(client: httpx.AsyncClient, upstream: str, cmd: str) -> 
         await asyncio.sleep(interval)
 
 
-async def main_async(args: argparse.Namespace) -> int:
-    """Keep llama.cpp HTTP streams alive across WS reconnects."""
+def _redundant_enabled() -> bool:
+    raw = (os.environ.get("CORTEX_DEPLOYER_REDUNDANT") or "1").strip().lower()
+    return raw not in {"0", "off", "false", "no"}
+
+
+async def _path_loop(
+    args: argparse.Namespace,
+    client: httpx.AsyncClient,
+    inflight: set[asyncio.Task],
+    inflight_by_id: dict[str, asyncio.Task],
+    path_force: str,
+) -> None:
+    """One path (LAN VIP or public DNS). Own link so replies stay on that WS."""
     link = ReconnectingLink()
+    backoff = 0.2
+    while True:
+        if path_force == "lan":
+            vip = lan_vip()
+            port = urlparse(args.gateway or "").port or DEFAULT_LAN_PORT
+            if not vip or not lan_vip_reachable(vip, port):
+                await asyncio.sleep(2.0)
+                continue
+        try:
+            await _run_cycle(
+                args, client, link, inflight, inflight_by_id, path_force=path_force,
+            )
+            backoff = 0.2
+        except asyncio.CancelledError:
+            raise
+        except Exception as exc:  # noqa: BLE001
+            log.warning(
+                "connection cycle failed (%s): %s; retry in %.1fs",
+                path_force, exc, backoff,
+            )
+            await asyncio.sleep(backoff)
+            backoff = min(backoff * 2, 5.0)
+
+
+async def main_async(args: argparse.Namespace) -> int:
+    """Keep llama.cpp HTTP streams alive across WS reconnects.
+
+    On the office LAN, dial the MetalLB VIP *and* public DNS at once so a
+    Cluster-policy WAN flip or a cafe uplink cannot take the lane down.
+    The gateway keeps both sockets; one close=1005 is a replica drop.
+    """
     inflight: set[asyncio.Task] = set()
     inflight_by_id: dict[str, asyncio.Task] = {}
-    backoff = 0.2
     async with httpx.AsyncClient(timeout=UPSTREAM_TIMEOUT) as client:
         recycle_task: asyncio.Task | None = None
         recycle_cmd = recycle_cmd_from_env(getattr(args, "recycle_cmd", "") or "")
@@ -589,20 +688,26 @@ async def main_async(args: argparse.Namespace) -> int:
                 _recycle_watch(client, args.upstream, recycle_cmd)
             )
             log.info("idle Metal-cap recycle armed cmd=%s", recycle_cmd)
+        loops: list[asyncio.Task] = []
         try:
-            while True:
-                try:
-                    await _run_cycle(args, client, link, inflight, inflight_by_id)
-                    backoff = 0.2
-                except asyncio.CancelledError:
-                    raise
-                except Exception as exc:  # noqa: BLE001
-                    log.warning(
-                        "connection cycle failed: %s; retry in %.1fs", exc, backoff,
-                    )
-                    await asyncio.sleep(backoff)
-                    backoff = min(backoff * 2, 5.0)
+            if _redundant_enabled() and lan_vip():
+                log.info("redundant gateway paths: lan-vip + public dns")
+                loops = [
+                    asyncio.create_task(
+                        _path_loop(args, client, inflight, inflight_by_id, "lan")
+                    ),
+                    asyncio.create_task(
+                        _path_loop(args, client, inflight, inflight_by_id, "dns")
+                    ),
+                ]
+                await asyncio.gather(*loops)
+            else:
+                await _path_loop(args, client, inflight, inflight_by_id, "auto")
         finally:
+            for loop in loops:
+                loop.cancel()
+            if loops:
+                await asyncio.gather(*loops, return_exceptions=True)
             if recycle_task is not None:
                 recycle_task.cancel()
                 await asyncio.gather(recycle_task, return_exceptions=True)

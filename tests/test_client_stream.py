@@ -178,6 +178,13 @@ class LanVipGatewayTests(unittest.TestCase):
         self.assertIsNone(sni)
         self.assertEqual(path, "dns")
 
+    def test_redundant_defaults_on(self):
+        with mock.patch.dict(os.environ, {}, clear=False):
+            os.environ.pop("CORTEX_DEPLOYER_REDUNDANT", None)
+            self.assertTrue(dc._redundant_enabled())
+        with mock.patch.dict(os.environ, {"CORTEX_DEPLOYER_REDUNDANT": "off"}):
+            self.assertFalse(dc._redundant_enabled())
+
 
 class JoinUpstreamTests(unittest.TestCase):
     def test_chat_stays_under_v1(self):
