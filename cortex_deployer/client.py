@@ -194,9 +194,11 @@ async def relay_request(
             content = await resp.aread()
             status = resp.status_code
             root = path.split("?", 1)[0].rstrip("/") or "/"
-            if method == "GET" and root == "/metrics" and status == 404:
-                # mlx-lm has no Prometheus. Cortex treats /metrics 404 as
-                # unhealthy and 503s the catalog even though /v1/models is 200.
+            if method == "GET" and root == "/metrics" and status in (404, 501):
+                # mlx-lm 404s /metrics. Older llama.cpp 501s it (Not Implemented)
+                # and only answers /slots. Cortex treated 501 as missing adopted
+                # metrics and retried ~20 GETs per reconnect, then painted
+                # vLLM 0r/0w. Synthesize empty Prometheus like the 404 path.
                 status = 200
                 out_headers = {"content-type": "text/plain; version=0.0.4"}
                 content = b"# cortex-deployer: upstream has no /metrics\n"
