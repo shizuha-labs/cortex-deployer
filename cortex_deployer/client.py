@@ -9,7 +9,11 @@ import logging
 import os
 import shlex
 import signal
+import socket
+import ssl
 from collections.abc import Awaitable, Callable
+from contextlib import asynccontextmanager
+from urllib.parse import urlparse, urlunparse
 
 import httpx
 import websockets
@@ -41,6 +45,12 @@ log = logging.getLogger("cortex-deployer")
 # budget; the gateway sends kind=cancel when the consumer is gone.
 UPSTREAM_TIMEOUT = httpx.Timeout(connect=10.0, read=None, write=600.0, pool=10.0)
 DEFAULT_CONCURRENCY = 2
+# Office LAN HTTPS VIP (wiki 1c6bc25f). LAN clients that resolve
+# cortex.shizuha.com via public DNS hairpin Jio/Airtel WAN IPs and the
+# WSS dies with close=1005. Dial this VIP instead; TLS SNI stays the
+# original hostname. Set CORTEX_DEPLOYER_LAN_VIP=off to disable.
+DEFAULT_LAN_VIP = "192.168.0.250"
+DEFAULT_LAN_PORT = 443
 
 SendFn = Callable[[dict], Awaitable[None]]
 
@@ -275,6 +285,104 @@ async def exec_command(msg: dict, send: SendFn) -> None:
         await send(response_frame(rid, 502, {"content-type": "application/json"}, err))
 
 
+def lan_vip() -> str:
+    raw = (os.environ.get("CORTEX_DEPLOYER_LAN_VIP") or DEFAULT_LAN_VIP).strip()
+    if raw.lower() in {"0", "off", "false", "none"}:
+        return ""
+    return raw
+
+
+def _is_shizuha_host(host: str) -> bool:
+    host = (host or "").lower().rstrip(".")
+    return host == "shizuha.com" or host.endswith(".shizuha.com")
+
+
+def lan_vip_reachable(vip: str, port: int = DEFAULT_LAN_PORT, timeout: float = 0.4) -> bool:
+    try:
+        with socket.create_connection((vip, port), timeout=timeout):
+            return True
+    except OSError:
+        return False
+
+
+def gateway_connect_target(uri: str) -> tuple[str, str | None, str]:
+    """Pick the TCP peer for a gateway URI.
+
+    Returns ``(connect_uri, tls_sni_or_none, path_label)``. When the
+    MetalLB LAN VIP is reachable, the URI host is rewritten to that VIP
+    and the original hostname is returned as SNI so the Let's Encrypt
+    cert still verifies.
+    """
+    parsed = urlparse(uri)
+    host = parsed.hostname or ""
+    vip = lan_vip()
+    if not vip or not _is_shizuha_host(host) or host == vip:
+        return uri, None, "dns"
+    probe_port = parsed.port or DEFAULT_LAN_PORT
+    if not lan_vip_reachable(vip, probe_port):
+        return uri, None, "dns"
+    netloc = vip if parsed.port is None else f"{vip}:{parsed.port}"
+    if parsed.username:
+        userinfo = parsed.username
+        if parsed.password:
+            userinfo += f":{parsed.password}"
+        netloc = f"{userinfo}@{netloc}"
+    return urlunparse(parsed._replace(netloc=netloc)), host, f"lan-vip:{vip}"
+
+
+def _ws_connect_kwargs(sni: str | None) -> dict:
+    kwargs: dict = {
+        "max_size": None,
+        "ping_interval": 10,
+        "ping_timeout": 120,
+        "open_timeout": 15,
+    }
+    if not sni:
+        return kwargs
+    ctx = ssl.create_default_context()
+    try:
+        ctx.set_alpn_protocols(["http/1.1"])
+    except (NotImplementedError, ValueError):
+        pass
+    kwargs["ssl"] = ctx
+    kwargs["server_hostname"] = sni
+    kwargs["additional_headers"] = {"Host": sni}
+    return kwargs
+
+
+@asynccontextmanager
+async def open_gateway_ws(token_uri: str, gateway: str, model: str):
+    """Dial LAN VIP first when reachable; fall back to DNS on handshake miss."""
+    connect_uri, sni, path = gateway_connect_target(token_uri)
+    candidates = [(connect_uri, sni, path)]
+    if path.startswith("lan-vip"):
+        candidates.append((token_uri, None, "dns"))
+    last_exc: Exception | None = None
+    for uri, sni, path in candidates:
+        log.info("connecting to gateway %s via %s (model=%s)", gateway, path, model)
+        entered = False
+        try:
+            async with websockets.connect(uri, **_ws_connect_kwargs(sni)) as ws:
+                entered = True
+                yield ws
+            return
+        except asyncio.CancelledError:
+            raise
+        except TypeError:
+            kw = _ws_connect_kwargs(sni)
+            kw.pop("additional_headers", None)
+            async with websockets.connect(uri, **kw) as ws:
+                entered = True
+                yield ws
+            return
+        except Exception as exc:  # noqa: BLE001 — try the next path
+            if entered:
+                raise
+            last_exc = exc
+            log.warning("gateway path %s failed: %s", path, exc)
+    raise last_exc or RuntimeError("gateway connect failed")
+
+
 class ReconnectingLink:
     """One logical gateway socket that survives close=1005 blips.
 
@@ -339,13 +447,10 @@ async def _run_cycle(
     uri = args.gateway
     sep = "&" if "?" in uri else "?"
     uri = f"{uri}{sep}token={args.token}"
-
-    log.info("connecting to gateway %s (model=%s)", args.gateway, args.model)
     # ping_timeout must outlive a busy 1-slot Metal decode: a 20s default
     # missed pongs while sending SSE and the library closed with 1005.
-    async with websockets.connect(
-        uri, max_size=None, ping_interval=10, ping_timeout=120,
-    ) as ws:
+    # LAN VIP + SNI avoids the public WAN hairpin that close=1005'd us.
+    async with open_gateway_ws(uri, args.gateway, args.model) as ws:
         link.attach(ws)
         hello = hello_frame(
             args.model,
