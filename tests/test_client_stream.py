@@ -3,6 +3,7 @@ from __future__ import annotations
 import asyncio
 import json
 import os
+import socket
 import unittest
 from unittest import mock
 
@@ -143,14 +144,17 @@ class RewriteModelTests(unittest.TestCase):
 class LanVipGatewayTests(unittest.TestCase):
     SRC = "wss://cortex.shizuha.com/cortex/deployer/ws/register?token=t"
 
-    def test_rewrites_shizuha_host_when_vip_open(self):
+    def test_pins_vip_without_rewriting_hostname(self):
         with mock.patch.object(dc, "lan_vip_reachable", return_value=True):
-            uri, sni, path = dc.gateway_connect_target(self.SRC)
-        self.assertEqual(sni, "cortex.shizuha.com")
-        self.assertIn("192.168.0.250", uri)
-        self.assertIn("token=t", uri)
-        self.assertNotIn("cortex.shizuha.com", uri.split("/")[2])
+            uri, vip, path = dc.gateway_connect_target(self.SRC)
+        self.assertEqual(uri, self.SRC)
+        self.assertEqual(vip, "192.168.0.250")
         self.assertIn("lan-vip", path)
+
+    def test_getaddrinfo_pin_rewrites_only_target_host(self):
+        with dc.force_lan_getaddrinfo("192.168.0.250", {"cortex.shizuha.com"}):
+            infos = socket.getaddrinfo("cortex.shizuha.com", 443, type=socket.SOCK_STREAM)
+        self.assertTrue(any(item[4][0] == "192.168.0.250" for item in infos))
 
     def test_keeps_dns_when_vip_closed(self):
         with mock.patch.object(dc, "lan_vip_reachable", return_value=False):
