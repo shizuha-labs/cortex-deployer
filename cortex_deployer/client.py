@@ -275,8 +275,65 @@ async def exec_command(msg: dict, send: SendFn) -> None:
         await send(response_frame(rid, 502, {"content-type": "application/json"}, err))
 
 
+class ReconnectingLink:
+    """One logical gateway socket that survives close=1005 blips.
+
+    In-flight llama.cpp HTTP streams keep calling send(); this waits for the
+    next register instead of cancelling the engine (1-slot abort → stall).
+    """
+
+    def __init__(self) -> None:
+        self._ws = None
+        self._lock = asyncio.Lock()
+        self._up = asyncio.Event()
+
+    def attach(self, ws) -> None:
+        self._ws = ws
+        self._up.set()
+
+    def detach(self, ws) -> None:
+        if self._ws is ws:
+            self._ws = None
+            self._up.clear()
+
+    async def send(self, obj: dict) -> None:
+        payload = json.dumps(obj)
+        while True:
+            await self._up.wait()
+            ws = self._ws
+            if ws is None:
+                continue
+            try:
+                async with self._lock:
+                    await ws.send(payload)
+                return
+            except Exception:
+                self.detach(ws)
+
+
 async def run_once(args: argparse.Namespace) -> None:
-    """One connect → register → serve cycle. Raises on disconnect so the caller retries."""
+    """Back-compat wrapper: one cycle, no inflight parking."""
+    link = ReconnectingLink()
+    inflight: set[asyncio.Task] = set()
+    inflight_by_id: dict[str, asyncio.Task] = {}
+    async with httpx.AsyncClient(timeout=UPSTREAM_TIMEOUT) as client:
+        try:
+            await _run_cycle(args, client, link, inflight, inflight_by_id)
+        finally:
+            for task in list(inflight):
+                task.cancel()
+            if inflight:
+                await asyncio.gather(*inflight, return_exceptions=True)
+
+
+async def _run_cycle(
+    args: argparse.Namespace,
+    client: httpx.AsyncClient,
+    link: ReconnectingLink,
+    inflight: set[asyncio.Task],
+    inflight_by_id: dict[str, asyncio.Task],
+) -> None:
+    """One connect → register → serve cycle. Does not cancel inflight on exit."""
     if not args.token:
         raise SystemExit("connect requires --token or CORTEX_DEPLOYER_TOKEN")
     uri = args.gateway
@@ -284,7 +341,12 @@ async def run_once(args: argparse.Namespace) -> None:
     uri = f"{uri}{sep}token={args.token}"
 
     log.info("connecting to gateway %s (model=%s)", args.gateway, args.model)
-    async with websockets.connect(uri, max_size=None, ping_interval=20) as ws:
+    # ping_timeout must outlive a busy 1-slot Metal decode: a 20s default
+    # missed pongs while sending SSE and the library closed with 1005.
+    async with websockets.connect(
+        uri, max_size=None, ping_interval=10, ping_timeout=120,
+    ) as ws:
+        link.attach(ws)
         hello = hello_frame(
             args.model,
             list(args.alias or []),
@@ -299,15 +361,10 @@ async def run_once(args: argparse.Namespace) -> None:
             raise RuntimeError(f"gateway rejected registration: {ack}")
         log.info("registered model=%s aliases=%s", args.model, hello["aliases"])
 
-        send_lock = asyncio.Lock()
-
         async def send(obj: dict) -> None:
-            async with send_lock:
-                await ws.send(json.dumps(obj))
+            await link.send(obj)
 
         sem = asyncio.Semaphore(max(1, int(args.concurrency)))
-        inflight: set[asyncio.Task] = set()
-        inflight_by_id: dict[str, asyncio.Task] = {}
 
         async def handle(msg: dict) -> None:
             async with sem:
@@ -324,67 +381,46 @@ async def run_once(args: argparse.Namespace) -> None:
                     msg = {**msg, **extra}
                 await relay_request(client, args.upstream, msg, send)
 
-        async with httpx.AsyncClient(timeout=UPSTREAM_TIMEOUT) as client:
-            try:
-                probe = await client.get(args.upstream.rstrip("/") + "/models")
-                log.info("upstream /models -> %s", probe.status_code)
-            except Exception as exc:  # noqa: BLE001
-                log.warning("upstream /models probe failed: %s", exc)
-
-            recycle_task: asyncio.Task | None = None
-            recycle_cmd = recycle_cmd_from_env(getattr(args, "recycle_cmd", "") or "")
-            if recycle_cmd:
-                recycle_task = asyncio.create_task(
-                    _recycle_watch(client, args.upstream, recycle_cmd)
-                )
-                log.info("idle Metal-cap recycle armed cmd=%s", recycle_cmd)
-
-            try:
-                async for raw in ws:
-                    msg = json.loads(raw)
-                    if msg.get("kind") == "cancel":
-                        rid = str(msg.get("id") or "")
-                        task = inflight_by_id.pop(rid, None)
-                        if task is not None:
-                            task.cancel()
-                            log.info("cancel rid=%s", rid)
-                        continue
-                    if msg.get("kind") == "exec":
-                        # CTX-717 / PLAT-6302: allowlisted model-serving command.
-                        rid = str(msg.get("id") or "")
-                        task = asyncio.create_task(exec_command(msg, send))
-                        inflight.add(task)
-                        inflight_by_id[rid] = task
-
-                        def _done(t: asyncio.Task, done_rid: str = rid) -> None:
-                            inflight.discard(t)
-                            inflight_by_id.pop(done_rid, None)
-
-                        task.add_done_callback(_done)
-                        continue
-                    if msg.get("kind") in {"response", "start", "chunk", "end", "ok"}:
-                        continue
-                    if not msg.get("id") or not msg.get("method"):
-                        continue
-                    rid = str(msg["id"])
-                    task = asyncio.create_task(handle(msg))
+        try:
+            async for raw in ws:
+                msg = json.loads(raw)
+                if msg.get("kind") == "cancel":
+                    rid = str(msg.get("id") or "")
+                    task = inflight_by_id.pop(rid, None)
+                    if task is not None:
+                        task.cancel()
+                        log.info("cancel rid=%s", rid)
+                    continue
+                if msg.get("kind") == "exec":
+                    # CTX-717 / PLAT-6302: allowlisted model-serving command.
+                    rid = str(msg.get("id") or "")
+                    task = asyncio.create_task(exec_command(msg, send))
                     inflight.add(task)
                     inflight_by_id[rid] = task
 
-                    def _done(t: asyncio.Task, done_rid: str = rid) -> None:
+                    def _done_exec(t: asyncio.Task, done_rid: str = rid) -> None:
                         inflight.discard(t)
                         inflight_by_id.pop(done_rid, None)
 
-                    task.add_done_callback(_done)
-            finally:
-                if recycle_task is not None:
-                    recycle_task.cancel()
-                    await asyncio.gather(recycle_task, return_exceptions=True)
-                for task in list(inflight):
-                    task.cancel()
-                if inflight:
-                    await asyncio.gather(*inflight, return_exceptions=True)
-    log.info("disconnected from gateway")
+                    task.add_done_callback(_done_exec)
+                    continue
+                if msg.get("kind") in {"response", "start", "chunk", "end", "ok"}:
+                    continue
+                if not msg.get("id") or not msg.get("method"):
+                    continue
+                rid = str(msg["id"])
+                task = asyncio.create_task(handle(msg))
+                inflight.add(task)
+                inflight_by_id[rid] = task
+
+                def _done(t: asyncio.Task, done_rid: str = rid) -> None:
+                    inflight.discard(t)
+                    inflight_by_id.pop(done_rid, None)
+
+                task.add_done_callback(_done)
+        finally:
+            link.detach(ws)
+            log.info("disconnected from gateway")
 
 
 async def _recycle_watch(client: httpx.AsyncClient, upstream: str, cmd: str) -> None:
@@ -427,17 +463,41 @@ async def _recycle_watch(client: httpx.AsyncClient, upstream: str, cmd: str) -> 
 
 
 async def main_async(args: argparse.Namespace) -> int:
-    backoff = 1
-    while True:
+    """Keep llama.cpp HTTP streams alive across WS reconnects."""
+    link = ReconnectingLink()
+    inflight: set[asyncio.Task] = set()
+    inflight_by_id: dict[str, asyncio.Task] = {}
+    backoff = 0.2
+    async with httpx.AsyncClient(timeout=UPSTREAM_TIMEOUT) as client:
+        recycle_task: asyncio.Task | None = None
+        recycle_cmd = recycle_cmd_from_env(getattr(args, "recycle_cmd", "") or "")
+        if recycle_cmd:
+            recycle_task = asyncio.create_task(
+                _recycle_watch(client, args.upstream, recycle_cmd)
+            )
+            log.info("idle Metal-cap recycle armed cmd=%s", recycle_cmd)
         try:
-            await run_once(args)
-            backoff = 1
-        except asyncio.CancelledError:
-            raise
-        except Exception as exc:  # noqa: BLE001
-            log.warning("connection cycle failed: %s; retry in %ds", exc, backoff)
-            await asyncio.sleep(backoff)
-            backoff = min(backoff * 2, 60)
+            while True:
+                try:
+                    await _run_cycle(args, client, link, inflight, inflight_by_id)
+                    backoff = 0.2
+                except asyncio.CancelledError:
+                    raise
+                except Exception as exc:  # noqa: BLE001
+                    log.warning(
+                        "connection cycle failed: %s; retry in %.1fs", exc, backoff,
+                    )
+                    await asyncio.sleep(backoff)
+                    backoff = min(backoff * 2, 5.0)
+        finally:
+            if recycle_task is not None:
+                recycle_task.cancel()
+                await asyncio.gather(recycle_task, return_exceptions=True)
+            for task in list(inflight):
+                task.cancel()
+            if inflight:
+                await asyncio.gather(*inflight, return_exceptions=True)
+    return 0
 
 
 def add_connect_arguments(parser: argparse.ArgumentParser) -> None:
