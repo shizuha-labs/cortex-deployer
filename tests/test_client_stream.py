@@ -74,6 +74,48 @@ class Metrics404SynthTests(unittest.TestCase):
         self.assertIn(b"no /metrics", dc.b64d(sent[0]["body_b64"]))
 
 
+class ReconnectingLinkTests(unittest.IsolatedAsyncioTestCase):
+    async def test_send_waits_for_reattach(self):
+        link = dc.ReconnectingLink()
+        sent = []
+
+        class WS:
+            async def send(self, payload):
+                sent.append(payload)
+
+        async def later():
+            await asyncio.sleep(0.02)
+            link.attach(WS())
+
+        task = asyncio.create_task(later())
+        await asyncio.wait_for(link.send({"kind": "chunk", "id": "x"}), timeout=1)
+        await task
+        self.assertEqual(json.loads(sent[0])["kind"], "chunk")
+
+    async def test_send_retries_after_detach(self):
+        link = dc.ReconnectingLink()
+        sent = []
+
+        class Dead:
+            async def send(self, payload):
+                raise ConnectionError("closed")
+
+        class Live:
+            async def send(self, payload):
+                sent.append(payload)
+
+        link.attach(Dead())
+
+        async def later():
+            await asyncio.sleep(0.02)
+            link.attach(Live())
+
+        task = asyncio.create_task(later())
+        await asyncio.wait_for(link.send({"ok": True}), timeout=1)
+        await task
+        self.assertIn("ok", sent[0])
+
+
 class AdvertiseModelsTests(unittest.TestCase):
     def test_injects_served_name_first(self):
         raw = json.dumps({"object": "list", "data": [{"id": "/models/x"}]}).encode()
