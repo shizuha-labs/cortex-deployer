@@ -1,6 +1,6 @@
 [project]
 name = "cortex-deployer"
-version = "0.3.24"
+version = "0.3.26"
 description = "Local model control plane: llama.cpp / SGLang / vLLM / MLX / ComfyUI, Web UI, Cortex connect"
 readme = "README.md"
 license = { text = "Apache-2.0" }
