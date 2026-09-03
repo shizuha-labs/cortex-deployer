@@ -423,14 +423,24 @@ async def open_gateway_ws(
         log.info("connecting to gateway %s via %s (model=%s)", gateway, label, model)
         entered = False
         try:
-            cm = force_lan_getaddrinfo(pin, {host}) if pin else nullcontext()
-            with cm:
-                async with websockets.connect(
+            # Pin DNS only for the TCP handshake. Holding the monkeypatch
+            # for the whole session made the "public" replica also hit the
+            # LAN VIP (process-global getaddrinfo).
+            pin_cm = force_lan_getaddrinfo(pin, {host}) if pin else nullcontext()
+            pin_cm.__enter__()
+            try:
+                ws_cm = websockets.connect(
                     connect_uri, **_ws_connect_kwargs(connect_uri)
-                ) as ws:
-                    entered = True
-                    enable_tcp_keepalive(ws)
-                    yield ws, label
+                )
+                ws = await ws_cm.__aenter__()
+            finally:
+                pin_cm.__exit__(None, None, None)
+            entered = True
+            enable_tcp_keepalive(ws)
+            try:
+                yield ws, label
+            finally:
+                await ws_cm.__aexit__(None, None, None)
             return
         except asyncio.CancelledError:
             raise
@@ -648,6 +658,10 @@ async def _path_loop(
     """One path (LAN VIP or public DNS). Own link so replies stay on that WS."""
     link = ReconnectingLink()
     backoff = 0.2
+    if path_force == "dns" and lan_vip():
+        # LAN handshake holds a process-wide getaddrinfo pin. Wait until
+        # that pin is gone so this path actually dials public DNS.
+        await asyncio.sleep(2.0)
     while True:
         if path_force == "lan":
             vip = lan_vip()
