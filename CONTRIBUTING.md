@@ -2,7 +2,7 @@
 
 ## Where to work
 
-Develop on Origin **`shizuha-labs/cortex-deployer-beta`** (`master`).
+Develop on Origin **`shizuha-labs/cortex-deployer`** (`master`).
 
 - Fleet agents: branch → PR → review → merge on **beta**
 - Coordinator / framework-maintainer: commit on beta `master` (no force-push)

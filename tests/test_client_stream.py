@@ -76,6 +76,25 @@ class Metrics404SynthTests(unittest.TestCase):
         self.assertEqual(sent[0]["status"], 200)
         self.assertIn(b"no /metrics", dc.b64d(sent[0]["body_b64"]))
 
+    def test_slots_404_becomes_idle_json(self):
+        sent = []
+
+        async def send(obj):
+            sent.append(obj)
+
+        fake = FakeStream([b"not found"], status=404, headers={"content-type": "text/plain"})
+        asyncio.run(
+            dc.relay_request(
+                FakeClient(fake),
+                "http://127.0.0.1:8016/v1",
+                {"id": "s1", "method": "GET", "path": "/slots", "headers": {}},
+                send,
+            )
+        )
+        self.assertEqual(sent[0]["status"], 200)
+        body = dc.b64d(sent[0]["body_b64"])
+        self.assertIn(b"is_processing", body)
+
 
 class ReconnectingLinkTests(unittest.IsolatedAsyncioTestCase):
     async def test_send_waits_for_reattach(self):

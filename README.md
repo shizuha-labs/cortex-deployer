@@ -155,7 +155,7 @@ cortex-deployer connect --gateway wss://cortex.shizuha.com/cortex/deployer/ws/re
 
 ## Contributing and security
 
-Development SoT is Origin `shizuha-labs/cortex-deployer-beta`. This public
+Development SoT is Origin `shizuha-labs/cortex-deployer`. This public
 tree is leak-checked and published from that hop — see
 [CONTRIBUTING.md](CONTRIBUTING.md) and [SECURITY.md](SECURITY.md).
 Report credentials to security@shizuha.com, not a public issue.
