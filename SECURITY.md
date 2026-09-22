@@ -9,13 +9,13 @@
 
 A connect token is supplied at runtime (`--token` / `CORTEX_DEPLOYER_TOKEN`). It is not a Cortex `ProviderCredential`.
 
-## Three-hop publication
+## Two-lane publication (2026-09-22)
 
-1. **Origin `cortex-deployer-beta`** — internal SoT. Intermediate agent commits may be messy. History stays private.
-2. **Origin `cortex-deployer`** — new-root history. Only a tree import + `merge --no-ff` after `scripts/leak-scan.sh` is green.
-3. **GitHub `shizuha-labs/cortex-deployer`** — merge-only from hop 2, after a second scan. Not an ff-mirror of beta.
+1. **Origin `cortex-deployer` `master`** — dev lane / internal SoT. Intermediate agent commits may be messy. Dev-only history stays private.
+2. **Origin `cortex-deployer` `publish`** — publish lane, driven by an agent: tree-only imports (`git commit-tree master^{tree}`) gated by `cortex-deployer-publish-guard.sh` (DAG invariant: no dev-only commit may enter the publish chain) plus a leak scan.
+3. **GitHub `shizuha-labs/cortex-deployer` `main`** — fast-forward-only push of hop 2 after CI is green. Never force-pushed.
 
-Never `git merge` a beta SHA into hop 2 or hop 3. That publishes beta history.
+Never `git merge` a dev SHA into `publish`. That publishes dev history. (The legacy three-hop flow via `cortex-deployer-beta` / `cortex-deployer-deprecated` was retired 2026-09-22.)
 
 ## Reporting
 

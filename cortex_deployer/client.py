@@ -213,6 +213,13 @@ async def relay_request(
                 status = 200
                 out_headers = {"content-type": "text/plain; version=0.0.4"}
                 content = b"# cortex-deployer: upstream has no /metrics\n"
+            if method == "GET" and root == "/slots" and status in (404, 501):
+                # ds4.c 404s /slots. Cortex overlays llama.cpp running/KV from
+                # that JSON; a 404 paints "llama.cpp: 0" on an otherwise live
+                # 1-seat Metal lane.
+                status = 200
+                out_headers = {"content-type": "application/json"}
+                content = b'[{"id":0,"id_task":-1,"n_ctx":0,"n_prompt_tokens":0,"is_processing":false}]'
             if method == "GET" and root in {"/models", "/v1/models"} and status == 200:
                 ads = msg.get("advertise_models") or []
                 ctx = msg.get("advertise_context")
