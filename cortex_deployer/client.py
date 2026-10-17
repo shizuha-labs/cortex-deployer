@@ -46,11 +46,10 @@ log = logging.getLogger("cortex-deployer")
 # budget; the gateway sends kind=cancel when the consumer is gone.
 UPSTREAM_TIMEOUT = httpx.Timeout(connect=10.0, read=None, write=600.0, pool=10.0)
 DEFAULT_CONCURRENCY = 2
-# Office LAN HTTPS VIP (wiki 1c6bc25f). LAN clients that resolve
-# cortex.shizuha.com via public DNS hairpin Jio/Airtel WAN IPs and the
-# WSS dies with close=1005. Dial this VIP instead; TLS SNI stays the
-# original hostname. Set CORTEX_DEPLOYER_LAN_VIP=off to disable.
-DEFAULT_LAN_VIP = "192.168.0.250"
+# Optional installation-owned LAN gateway pin. Some deployments use a VIP to
+# avoid WAN hairpin; public source must not select a particular office network.
+# Configure CORTEX_DEPLOYER_LAN_VIP explicitly; Host/TLS SNI stay unchanged.
+DEFAULT_LAN_VIP = ""
 DEFAULT_LAN_PORT = 443
 
 SendFn = Callable[[dict], Awaitable[None]]

@@ -159,3 +159,14 @@ Development SoT is Origin `shizuha-labs/cortex-deployer`. This public
 tree is leak-checked and published from that hop — see
 [CONTRIBUTING.md](CONTRIBUTING.md) and [SECURITY.md](SECURITY.md).
 Report credentials to security@shizuha.com, not a public issue.
+
+
+### Installation-owned gateway pinning
+
+No office LAN gateway address is selected by default. Deployments that need
+LAN pinning to avoid WAN hairpin supply `CORTEX_DEPLOYER_LAN_VIP` explicitly in
+the deployer service environment before adopting this update. Preserve the
+installation's already-reviewed address there; do not copy it into public
+source. `off` disables pinning. The existing reachability check, original URL,
+Host header and TLS SNI are unchanged. This config does not alter any serving
+engine, model registration or backend admission policy.

@@ -163,18 +163,29 @@ class RewriteModelTests(unittest.TestCase):
 class LanVipGatewayTests(unittest.TestCase):
     SRC = "wss://cortex.shizuha.com/cortex/deployer/ws/register?token=t"
 
+    def test_unconfigured_installation_uses_no_private_gateway_override(self):
+        with mock.patch.dict(os.environ, {}, clear=False):
+            os.environ.pop('CORTEX_DEPLOYER_LAN_VIP', None)
+            self.assertTrue(dc.lan_vip() == '', 'gateway pinning must require explicit managed configuration')
+            with mock.patch.object(dc, 'lan_vip_reachable') as probe:
+                uri, vip, route = dc.gateway_connect_target(self.SRC)
+            probe.assert_not_called()
+            self.assertEqual((uri, vip, route), (self.SRC, None, 'dns'))
+
+    @mock.patch.dict(os.environ, {"CORTEX_DEPLOYER_LAN_VIP": "192.0.2.25"})
     def test_pins_vip_without_rewriting_hostname(self):
         with mock.patch.object(dc, "lan_vip_reachable", return_value=True):
             uri, vip, path = dc.gateway_connect_target(self.SRC)
         self.assertEqual(uri, self.SRC)
-        self.assertEqual(vip, "192.168.0.250")
+        self.assertEqual(vip, "192.0.2.25")
         self.assertIn("lan-vip", path)
 
     def test_getaddrinfo_pin_rewrites_only_target_host(self):
-        with dc.force_lan_getaddrinfo("192.168.0.250", {"cortex.shizuha.com"}):
+        with dc.force_lan_getaddrinfo("192.0.2.25", {"cortex.shizuha.com"}):
             infos = socket.getaddrinfo("cortex.shizuha.com", 443, type=socket.SOCK_STREAM)
-        self.assertTrue(any(item[4][0] == "192.168.0.250" for item in infos))
+        self.assertTrue(any(item[4][0] == "192.0.2.25" for item in infos))
 
+    @mock.patch.dict(os.environ, {"CORTEX_DEPLOYER_LAN_VIP": "192.0.2.25"})
     def test_keeps_dns_when_vip_closed(self):
         with mock.patch.object(dc, "lan_vip_reachable", return_value=False):
             uri, sni, path = dc.gateway_connect_target(self.SRC)
@@ -182,6 +193,7 @@ class LanVipGatewayTests(unittest.TestCase):
         self.assertIsNone(sni)
         self.assertEqual(path, "dns")
 
+    @mock.patch.dict(os.environ, {"CORTEX_DEPLOYER_LAN_VIP": "192.0.2.25"})
     def test_skips_non_shizuha(self):
         src = "wss://example.com/ws"
         with mock.patch.object(dc, "lan_vip_reachable", return_value=True):
